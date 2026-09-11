@@ -14,6 +14,17 @@ final class CameraController: NSObject {
 
     enum Facing: Equatable { case front, back }
 
+    /// How the take is framed. On an iPhone 17 front camera the square sensor
+    /// lets the user pick this without turning the phone. Everywhere else it
+    /// follows how the phone is actually being held.
+    enum Framing: Equatable {
+        case portrait, landscape
+
+        var aspectRatio: AVCaptureDevice.AspectRatio {
+            self == .portrait ? .ratio9x16 : .ratio16x9
+        }
+    }
+
     private(set) var authorization: Authorization = .undetermined
     private(set) var isRecording = false
     private(set) var elapsed: Double = 0
@@ -21,6 +32,14 @@ final class CameraController: NSObject {
     /// True when the device has no usable camera. Video is impossible, but a
     /// voice-only Talk still is, so the sheet says so rather than pretending.
     private(set) var cameraUnavailable = false
+
+    /// True only when the active camera has a square sensor that can reframe
+    /// without the phone being rotated. iPhone 17 front camera today.
+    private(set) var supportsDynamicFraming = false
+    private(set) var framing: Framing = .portrait
+    /// The angle the recorded file needs so it is horizon level, straight from
+    /// the system rather than assumed.
+    private(set) var captureRotationAngle: CGFloat = 90
     var facing: Facing = .front
     var voiceOnly = false
 
@@ -48,6 +67,10 @@ final class CameraController: NSObject {
     /// really begins is caught by a watchdog rather than spinning forever.
     private var didStart = false
     private var watchdog: Task<Void, Never>?
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var captureAngleObservation: NSKeyValueObservation?
+    private var previewAngleObservation: NSKeyValueObservation?
+    private weak var previewLayer: AVCaptureVideoPreviewLayer?
     private var startedAt: Date?
     private var finishContinuation: CheckedContinuation<Take?, Never>?
 
@@ -66,6 +89,8 @@ final class CameraController: NSObject {
             cameraUnavailable = true
             voiceOnly = true
         }
+        refreshDynamicFraming()
+        startRotationCoordinator()
         start()
     }
 
@@ -93,15 +118,76 @@ final class CameraController: NSObject {
                 session.sessionPreset = .high
                 if let video, session.canAddInput(video) { session.addInput(video) }
                 if let audio, session.canAddInput(audio) { session.addInput(audio) }
-                if session.canAddOutput(movieOutput) {
-                    session.addOutput(movieOutput)
-                    if let connection = movieOutput.connection(with: .video),
-                       connection.isVideoRotationAngleSupported(90) {
-                        connection.videoRotationAngle = 90
-                    }
-                }
+                if session.canAddOutput(movieOutput) { session.addOutput(movieOutput) }
                 session.commitConfiguration()
                 continuation.resume()
+            }
+        }
+    }
+
+    /// The preview layer hands itself over so the rotation coordinator can
+    /// keep the preview horizon level too.
+    func attach(previewLayer layer: AVCaptureVideoPreviewLayer) {
+        previewLayer = layer
+        startRotationCoordinator()
+    }
+
+    /// Replaces the hardcoded rotation with the system's own answer, observed
+    /// live so turning the phone mid-session is handled.
+    private func startRotationCoordinator() {
+        captureAngleObservation = nil
+        previewAngleObservation = nil
+        guard let device = videoInput?.device else { return }
+
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
+        rotationCoordinator = coordinator
+        applyPreviewAngle(coordinator.videoRotationAngleForHorizonLevelPreview)
+        captureRotationAngle = coordinator.videoRotationAngleForHorizonLevelCapture
+
+        captureAngleObservation = coordinator.observe(
+            \.videoRotationAngleForHorizonLevelCapture,
+            options: [.new]
+        ) { [weak self] _, change in
+            guard let angle = change.newValue else { return }
+            Task { @MainActor in self?.captureRotationAngle = angle }
+        }
+        previewAngleObservation = coordinator.observe(
+            \.videoRotationAngleForHorizonLevelPreview,
+            options: [.new]
+        ) { [weak self] _, change in
+            guard let angle = change.newValue else { return }
+            Task { @MainActor in self?.applyPreviewAngle(angle) }
+        }
+    }
+
+    private func applyPreviewAngle(_ angle: CGFloat) {
+        guard let connection = previewLayer?.connection,
+              connection.isVideoRotationAngleSupported(angle) else { return }
+        connection.videoRotationAngle = angle
+    }
+
+    /// Reads whether this camera can reframe without the phone turning, and
+    /// seeds the current framing from the device.
+    private func refreshDynamicFraming() {
+        guard let device = videoInput?.device else {
+            supportsDynamicFraming = false
+            return
+        }
+        let supported = device.activeFormat.supportedDynamicAspectRatios
+        supportsDynamicFraming = supported.contains(.ratio9x16) && supported.contains(.ratio16x9)
+        guard supportsDynamicFraming else { return }
+        framing = device.dynamicAspectRatio == .ratio16x9 ? .landscape : .portrait
+    }
+
+    /// Only meaningful on a square sensor. Asks the device to reframe; the
+    /// phone does not move.
+    func setFraming(_ next: Framing) {
+        guard supportsDynamicFraming, next != framing, let device = videoInput?.device else { return }
+        framing = next
+        device.setDynamicAspectRatio(next.aspectRatio) { _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                self.failure = "Could not switch framing: \(error.localizedDescription)"
             }
         }
     }
@@ -144,6 +230,8 @@ final class CameraController: NSObject {
             if session.canAddInput(input) { session.addInput(input) }
             session.commitConfiguration()
         }
+        refreshDynamicFraming()
+        startRotationCoordinator()
     }
 
     // MARK: - Recording
@@ -161,8 +249,17 @@ final class CameraController: NSObject {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("take-\(UUID().uuidString).mov")
         if let connection = movieOutput.connection(with: .video) {
-            if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
-            connection.isVideoMirrored = facing == .front && connection.isVideoMirroringSupported
+            // Horizon level per the system, not a guess. This is what stops a
+            // portrait take being written out as landscape.
+            let angle = captureRotationAngle
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+            // Match the system camera: the preview mirrors, the file does not.
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
         }
         movieOutput.startRecording(to: url, recordingDelegate: self)
         isRecording = true

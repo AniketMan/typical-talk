@@ -22,6 +22,11 @@ struct ArchiveView: View {
                     if isSearching {
                         results
                     } else {
+                        Picker("Scope", selection: $scope) {
+                            ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+
                         switch scope {
                         case .transcripts: browse
                         case .saved: saved
@@ -34,17 +39,10 @@ struct ArchiveView: View {
             .scrollEdgeEffectStyle(.soft, for: .top)
             .background(Palette.canvas)
             .navigationTitle("Archive")
-            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search every word spoken")
             .searchToolbarBehavior(.minimize)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Scope", selection: $scope) {
-                        ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 220)
-                }
+            .searchScopes($scope, activation: .onSearchPresentation) {
+                ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
             }
             .navigationDestination(for: Talk.ID.self) { ThreadView(talkID: $0) }
         }

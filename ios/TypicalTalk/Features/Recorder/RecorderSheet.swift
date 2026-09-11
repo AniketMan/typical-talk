@@ -90,7 +90,7 @@ struct RecorderSheet: View {
                 } else if camera.voiceOnly {
                     Palette.raised.overlay { WaveformPlaceholder() }
                 } else {
-                    CameraPreview(session: camera.session)
+                    CameraPreview(camera: camera)
                 }
             case .undetermined:
                 Palette.raised.overlay { ProgressView() }
@@ -122,7 +122,8 @@ struct RecorderSheet: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .aspectRatio(9 / 13, contentMode: .fit)
+        .aspectRatio(camera.supportsDynamicFraming && camera.framing == .landscape ? 16 / 9 : 9 / 13, contentMode: .fit)
+        .animation(.snappy(duration: 0.3), value: camera.framing)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(alignment: .top) { hud }
@@ -184,6 +185,18 @@ struct RecorderSheet: View {
                     camera.flip()
                 }
                 .disabled(camera.voiceOnly || camera.cameraUnavailable)
+
+                // Square sensor only. On every other camera the framing comes
+                // from how the phone is held, so there is nothing to choose.
+                if camera.supportsDynamicFraming && !camera.voiceOnly {
+                    toggle(
+                        camera.framing == .portrait ? "Portrait" : "Landscape",
+                        camera.framing == .portrait ? "rectangle.portrait" : "rectangle",
+                        on: camera.framing == .landscape
+                    ) {
+                        camera.setFraming(camera.framing == .portrait ? .landscape : .portrait)
+                    }
+                }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
@@ -195,17 +208,17 @@ struct RecorderSheet: View {
         Button {
             withAnimation(.snappy(duration: 0.22)) { action() }
         } label: {
-            VStack(spacing: 3) {
-                Image(systemName: symbol).font(.footnote)
-                Text(title).font(.system(size: 10))
-            }
-            .foregroundStyle(on ? .black : .white.opacity(0.85))
-            .frame(maxWidth: .infinity, minHeight: 46)
-            .background {
-                if on { Capsule().fill(.white) }
-            }
+            Image(systemName: symbol)
+                .font(.body)
+                .foregroundStyle(on ? .black : .white.opacity(0.9))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background {
+                    if on { Capsule().fill(.white) }
+                }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
     /// The one tinted control in the whole app.
