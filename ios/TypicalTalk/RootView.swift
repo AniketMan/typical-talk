@@ -26,6 +26,9 @@ struct RootView: View {
     }
     @State private var showRecorder = false
     @State private var archiveQuery = ""
+    @State private var router = IntentRouter.shared
+    @State private var path: [Talk.ID] = []
+    @State private var recorderTarget: Talk.ID?
     @Namespace private var recorderMorph
 
     /// Tapping Record never changes the selected tab. It expands the tinted
@@ -78,7 +81,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tint(Palette.record)
+        .tint(.white)
         // Anchors the zoom so the recorder grows out of the Record item
         // instead of popping in from nowhere.
         .overlay(alignment: .bottom) {
@@ -89,9 +92,29 @@ struct RootView: View {
                 .matchedTransitionSource(id: "recorder", in: recorderMorph)
         }
         .fullScreenCover(isPresented: $showRecorder) {
-            RecorderSheet()
+            RecorderSheet(destination: recorderTarget)
                 .navigationTransition(.zoom(sourceID: "recorder", in: recorderMorph))
         }
         .background(Palette.canvas)
+        .task { await store.loadSeed() }
+        // Siri and Shortcuts drive the app through the router.
+        .onChange(of: router.showArchive) { _, show in
+            guard show else { return }
+            archiveQuery = router.searchQuery ?? ""
+            selection = .archive
+            router.showArchive = false
+        }
+        .onChange(of: router.openRecorderFor) { _, target in
+            guard let target else { return }
+            recorderTarget = target
+            showRecorder = true
+            router.openRecorderFor = nil
+        }
+        .onChange(of: router.openTalkID) { _, id in
+            guard let id else { return }
+            selection = .talks
+            TalksNavigation.shared.open = id
+            router.openTalkID = nil
+        }
     }
 }

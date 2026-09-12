@@ -5,6 +5,8 @@ struct TalksView: View {
     @State private var filter: Filter = .all
     @State private var showNotifications = false
     @State private var showFindFriends = false
+    @State private var navigation = TalksNavigation.shared
+    @State private var path: [Talk.ID] = []
     @Namespace private var morph
 
     enum Filter: String, CaseIterable, Identifiable {
@@ -21,7 +23,7 @@ struct TalksView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 18) {
                     // One segmented control, not two. The screen is named by
@@ -82,8 +84,13 @@ struct TalksView: View {
                     .matchedTransitionSource(id: "notifications", in: morph)
                 }
             }
+            .onChange(of: navigation.open) { _, id in
+                guard let id else { return }
+                path = [id]
+                navigation.open = nil
+            }
             .sheet(isPresented: $showFindFriends) {
-                NavigationStack {
+                NavigationStack(path: $path) {
                     FindFriendsView()
                         .navigationTitle("Find Friends")
                         .navigationBarTitleDisplayMode(.inline)

@@ -230,10 +230,12 @@ struct MessageRow: View {
                             .font(.caption2)
                             .foregroundStyle(Palette.secondaryText)
                     }
-                    Text(message.summaryLine)
-                        .font(.caption)
-                        .foregroundStyle(Palette.secondaryText)
-                        .lineLimit(1)
+                    if let line = message.summaryLine {
+                        Text(line)
+                            .font(.caption)
+                            .foregroundStyle(Palette.secondaryText)
+                            .lineLimit(2)
+                    }
                     HStack(spacing: 6) {
                         Text("\(timecode(message.duration)) \(message.watched ? "watched" : "new")")
                             .font(.caption2.monospacedDigit())

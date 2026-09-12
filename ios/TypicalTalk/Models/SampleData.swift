@@ -1,149 +1,87 @@
+import AVFoundation
 import Foundation
 
-/// Seed content so every screen has something honest to show before the user
-/// records anything. Copy matches the Stitch screens the demo was built from.
+/// The seeded conversations, built from the video files bundled in `Seed/`.
+/// Transcripts are deliberately empty here: the app transcribes these on
+/// device at first launch, which is the same path a take you record takes.
 enum SampleData {
     static let you = Person(name: "You", isYou: true)
-    static let maya = Person(name: "Maya Lin")
-    static let marcus = Person(name: "Marcus Vance")
-    static let elena = Person(name: "Elena Rostova")
-    static let sarah = Person(name: "Sarah Lin")
+    static let bob = Person(name: "Bob")
+    static let freya = Person(name: "Freya")
+    static let lindsey = Person(name: "Lindsey")
+    static let marcus = Person(name: "Marcus")
+    static let jake = Person(name: "Jake")
+    static let priya = Person(name: "Priya")
+    static let sofia = Person(name: "Sofia")
 
-    static func talks(now: Date = .now) -> [Talk] {
-        let mayaTake = Message(
-            author: maya,
-            sentAt: now.addingTimeInterval(-4 * 60),
-            duration: 48,
-            transcript: [
-                TranscriptSegment(start: 0, text: "Hey, quick one about Saturday."),
-                TranscriptSegment(start: 8, text: "I just booked the rooftop terrace for 7:30."),
-                TranscriptSegment(start: 19, text: "Everyone bring coats just in case it gets breezy."),
-                TranscriptSegment(start: 31, text: "I will send the address once they confirm the deposit.")
-            ],
-            chapters: [
-                Chapter(start: 0, title: "Opening"),
-                Chapter(start: 12, title: "Venue"),
-                Chapter(start: 27, title: "Saturday timing")
-            ]
-        )
-
-        let marcusReply = Message(
-            author: marcus,
-            sentAt: now.addingTimeInterval(-14 * 60),
-            duration: 34,
-            transcript: [
-                TranscriptSegment(start: 0, text: "Count me in for the terrace."),
-                TranscriptSegment(start: 11, text: "Checking the cocktails menu now, I will report back."),
-                TranscriptSegment(start: 24, text: "We should align the design sprint with the roadmap dates too.")
-            ],
-            chapters: [Chapter(start: 0, title: "Reply"), Chapter(start: 20, title: "Roadmap")]
-        )
-
-        let elenaWatched = Message(
-            author: elena,
-            sentAt: now.addingTimeInterval(-60 * 60),
-            duration: 72,
-            watched: true,
-            reactions: ["❤️"],
-            transcript: [
-                TranscriptSegment(start: 0, text: "Tasting the matcha berry cake right now."),
-                TranscriptSegment(start: 14, text: "It is incredible, we should order the big one."),
-                TranscriptSegment(start: 38, text: "The outcome of the previous design sprint clarifies the roadmap.")
-            ],
-            chapters: [Chapter(start: 0, title: "Bakery"), Chapter(start: 34, title: "Work")]
-        )
-
-        let weekendCrew = Talk(
-            title: "Weekend Crew",
-            members: [you, maya, marcus, elena],
-            messages: [mayaTake, marcusReply, elenaWatched]
-        )
-
-        let mayaSolo = Talk(
-            title: "Maya Lin",
-            members: [you, maya],
-            messages: [
-                Message(
-                    author: maya,
-                    sentAt: now.addingTimeInterval(-4 * 60),
-                    duration: 102,
-                    transcript: [
-                        TranscriptSegment(start: 0, text: "I just booked the rooftop for 7:30."),
-                        TranscriptSegment(start: 22, text: "Bring a coat, it might get breezy.")
-                    ],
-                    chapters: [Chapter(start: 0, title: "Booking")]
-                )
-            ]
-        )
-
-        let marcusSolo = Talk(
-            title: "Marcus Vance",
-            members: [you, marcus],
-            messages: [
-                Message(
-                    author: marcus,
-                    sentAt: now.addingTimeInterval(-26 * 3600),
-                    duration: 54,
-                    watched: true,
-                    transcript: [
-                        TranscriptSegment(start: 0, text: "Shared a quick update from the trail."),
-                        TranscriptSegment(start: 20, text: "The view is worth the climb, honestly.")
-                    ],
-                    chapters: [Chapter(start: 0, title: "Trail")]
-                )
-            ]
-        )
-
-        return [mayaSolo, weekendCrew, marcusSolo]
+    /// A bundled seed clip. Missing files are skipped rather than faked.
+    private static func clip(_ name: String) -> URL? {
+        Bundle.main.url(forResource: name, withExtension: "mp4")
     }
 
-    static func bookmarks(for talks: [Talk], now: Date = .now) -> [Bookmark] {
-        guard let crew = talks.first(where: { $0.isGroup }) else { return [] }
-        let byAuthor: (Person) -> Message? = { person in
-            crew.messages.first { $0.author == person }
-        }
-        var result: [Bookmark] = []
-        if let m = byAuthor(elena) {
-            result.append(Bookmark(title: "Birthday toast", talkID: crew.id, messageID: m.id, author: elena, at: 38, savedAt: now.addingTimeInterval(-2 * 86_400)))
-        }
-        if let m = byAuthor(marcus) {
-            result.append(Bookmark(title: "Rooftop plans", talkID: crew.id, messageID: m.id, author: marcus, at: 11, savedAt: now.addingTimeInterval(-4 * 86_400)))
-        }
-        if let m = byAuthor(maya) {
-            result.append(Bookmark(title: "Venue confirmed", talkID: crew.id, messageID: m.id, author: maya, at: 8, savedAt: now.addingTimeInterval(-7 * 86_400)))
-        }
-        return result
+    private static func message(
+        _ file: String,
+        from author: Person,
+        minutesAgo: Double,
+        watched: Bool = false,
+        reactions: [String] = []
+    ) async -> Message? {
+        guard let url = clip(file) else { return nil }
+        let duration = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+        return Message(
+            author: author,
+            sentAt: Date.now.addingTimeInterval(-minutesAgo * 60),
+            duration: duration > 0 ? duration : 10,
+            watched: watched,
+            reactions: reactions,
+            localVideoURL: url
+        )
     }
 
-    static let highlights: [Highlight] = [
-        Highlight(
-            talkTitle: "Weekend Crew",
-            subtitle: "Key decisions across 3 video updates",
-            points: [
-                "Rooftop terrace booked for Saturday at 7:30.",
-                "Everyone brings a coat, the terrace gets breezy.",
-                "Address goes out once the deposit clears."
-            ],
-            duration: 220
-        ),
-        Highlight(
-            talkTitle: "Maya Lin",
-            subtitle: "Synthesized from the last two takes",
-            points: [
-                "Booking is confirmed and paid.",
-                "Follow up on the cocktails menu before Friday."
-            ],
-            duration: 96
-        )
-    ]
+    static func talks() async -> [Talk] {
+        var result: [Talk] = []
 
-    static func notifications(now: Date = .now) -> [AppNotification] {
-        [
-            AppNotification(kind: .reaction, text: "Maya reacted to your take", detail: "Weekend Crew", at: now.addingTimeInterval(-4 * 60)),
-            AppNotification(kind: .mention, text: "Elena mentioned you", detail: "Weekend Crew", at: now.addingTimeInterval(-22 * 60)),
-            AppNotification(kind: .watchReceipt, text: "Marcus watched your take", detail: "Seen yesterday at 18:40", at: now.addingTimeInterval(-26 * 3600))
+        // Group thread: Jake, Marcus and Priya.
+        let group = [
+            await message("group-priya", from: priya, minutesAgo: 6),
+            await message("group-marcus", from: marcus, minutesAgo: 24),
+            await message("group-jake", from: jake, minutesAgo: 51, watched: true, reactions: ["😂"])
+        ].compactMap { $0 }
+        if !group.isEmpty {
+            result.append(Talk(title: "Weekend Crew", members: [you, jake, marcus, priya], messages: group))
+        }
+
+        // One to one with Sofia, the only thread you have replied in.
+        let sofiaThread = [
+            await message("sofia-2", from: sofia, minutesAgo: 14),
+            await message("sofia-me", from: you, minutesAgo: 40, watched: true),
+            await message("sofia-1", from: sofia, minutesAgo: 95, watched: true, reactions: ["❤️"])
+        ].compactMap { $0 }
+        if !sofiaThread.isEmpty {
+            result.append(Talk(title: "Sofia", members: [you, sofia], messages: sofiaThread))
+        }
+
+        // Threads where someone sent a take and you have not replied yet.
+        let unanswered: [(Person, [String], [Double])] = [
+            (bob, ["bob-2", "bob-1"], [33, 210]),
+            (freya, ["freya-1"], [120]),
+            (lindsey, ["lindsey-1"], [320]),
+            (marcus, ["marcus-1"], [1_500])
         ]
+        for (person, files, ages) in unanswered {
+            var messages: [Message] = []
+            for (file, age) in zip(files, ages) {
+                if let m = await message(file, from: person, minutesAgo: age) { messages.append(m) }
+            }
+            guard !messages.isEmpty else { continue }
+            result.append(Talk(title: person.name, members: [you, person], messages: messages))
+        }
+
+        return result.sorted { ($0.latest?.sentAt ?? .distantPast) > ($1.latest?.sentAt ?? .distantPast) }
     }
+
+    /// Nothing is bookmarked until the user bookmarks something.
+    static func bookmarks(for talks: [Talk]) -> [Bookmark] { [] }
 
     static let suggestedContacts = ["Jordan Lee", "Priya Shah", "Devin Brooks"]
 }

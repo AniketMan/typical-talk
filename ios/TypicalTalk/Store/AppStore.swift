@@ -25,12 +25,40 @@ final class AppStore {
     var skippedContacts: Set<String> = []
     var contactsSynced = false
 
+    private(set) var isLoadingSeed = true
+
     init() {
-        let seeded = SampleData.talks()
-        talks = seeded
-        bookmarks = SampleData.bookmarks(for: seeded)
+        talks = []
+        bookmarks = []
         highlights = []
         notifications = []
+    }
+
+    /// Loads the bundled conversations, then transcribes them on device so
+    /// search, chapters and captions work on seeded takes exactly as they do
+    /// on one you record.
+    func loadSeed() async {
+        guard talks.isEmpty else { return }
+        talks = await SampleData.talks()
+        isLoadingSeed = false
+        await transcribeSeed()
+    }
+
+    private func transcribeSeed() async {
+        for talkIndex in talks.indices {
+            for messageIndex in talks[talkIndex].messages.indices {
+                let message = talks[talkIndex].messages[messageIndex]
+                guard message.transcript.isEmpty, let url = message.localVideoURL else { continue }
+                let segments = await Transcriber.segments(for: url)
+                guard !segments.isEmpty else { continue }
+                guard talkIndex < talks.count,
+                      messageIndex < talks[talkIndex].messages.count,
+                      talks[talkIndex].messages[messageIndex].id == message.id else { continue }
+                talks[talkIndex].messages[messageIndex].transcript = segments
+                talks[talkIndex].messages[messageIndex].chapters =
+                    Self.chapters(from: segments, duration: message.duration)
+            }
+        }
     }
 
     var unreadNotificationCount: Int { derivedNotifications.count }

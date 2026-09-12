@@ -32,12 +32,12 @@ struct TalkCard: View {
                 if let status = talk.statusLine {
                     Text(status)
                         .font(.caption2)
-                        .foregroundStyle(talk.hasUnread ? Palette.record : Palette.secondaryText)
+                        .foregroundStyle(Palette.secondaryText)
                         .lineLimit(1)
                 }
 
-                if let latest = talk.latest {
-                    Text(latest.summaryLine)
+                if let line = talk.latest?.summaryLine {
+                    Text(line)
                         .font(.caption)
                         .foregroundStyle(Palette.secondaryText)
                         .lineLimit(1)

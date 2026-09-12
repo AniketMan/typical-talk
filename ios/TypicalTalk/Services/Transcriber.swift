@@ -1,20 +1,32 @@
 import AVFoundation
 import Foundation
 import Speech
+import OSLog
 
 /// On-device transcription of a finished take, using the iOS 26 Speech
 /// analyser. Nothing leaves the phone, which is the whole reason the power
 /// features are free.
 enum Transcriber {
+    private static let log = Logger(subsystem: "com.typicaltalk", category: "transcribe")
+
     /// Transcribes the audio track of a recorded file into timed segments.
     /// Returns an empty array rather than throwing when the model or the
     /// permission is unavailable, so sending a take never blocks on speech.
     static func segments(for url: URL) async -> [TranscriptSegment] {
-        guard SpeechTranscriber.isAvailable else { return [] }
-        guard await requestAuthorization() else { return [] }
+        guard SpeechTranscriber.isAvailable else {
+            log.error("TT: SpeechTranscriber unavailable on this device")
+            return []
+        }
+        guard await requestAuthorization() else {
+            log.error("TT: speech permission refused")
+            return []
+        }
 
         let locale = Locale.current
-        guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else { return [] }
+        guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
+            log.error("TT: no supported locale matching \(locale.identifier)")
+            return []
+        }
 
         let transcriber = SpeechTranscriber(
             locale: supported,
@@ -39,8 +51,10 @@ enum Transcriber {
                 guard !text.isEmpty else { continue }
                 segments.append(TranscriptSegment(start: result.range.start.seconds, text: text))
             }
+            log.notice("TT: transcribed \(segments.count) segments")
             return segments.sorted { $0.start < $1.start }
         } catch {
+            log.error("TT: failed: \(error.localizedDescription)")
             return []
         }
     }

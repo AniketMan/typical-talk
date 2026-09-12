@@ -57,8 +57,10 @@ struct Message: Identifiable, Hashable, Sendable {
     /// Set when the take was captured on this device in this session.
     var localVideoURL: URL?
 
-    var summaryLine: String {
-        transcript.first?.text ?? "No transcript yet"
+    /// Nil until this take has actually been transcribed, so callers can omit
+    /// the line instead of printing a placeholder on every row.
+    var summaryLine: String? {
+        transcript.first?.text
     }
 
     init(
@@ -121,9 +123,13 @@ struct Talk: Identifiable, Hashable, Sendable {
     var statusLine: String? {
         if let newest = messages.first, !newest.watched, !newest.author.isYou {
             let who = newest.author.name.split(separator: " ").first.map(String.init) ?? newest.author.name
-            return unreadCount > 1
+            guard unreadCount > 1 else { return "\(who) sent a new take" }
+            let unreadAuthors = Set(
+                messages.filter { !$0.watched && !$0.author.isYou }.map(\.author.id)
+            )
+            return unreadAuthors.count > 1
                 ? "\(who) and others sent \(unreadCount) new takes"
-                : "\(who) sent a new take"
+                : "\(who) sent \(unreadCount) new takes"
         }
         if let mine = messages.first, mine.author.isYou {
             return mine.watched ? "Sent" : "Sending"

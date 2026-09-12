@@ -8,8 +8,10 @@ struct TypicalTalkApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
+                // Intents run outside the view tree and need the store.
+                .task { IntentBridge.store = store }
                 .preferredColorScheme(.dark)
-                .tint(Palette.record)
+                .tint(.white)
         }
     }
 }
