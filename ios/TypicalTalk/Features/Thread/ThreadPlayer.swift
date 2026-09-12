@@ -2,9 +2,10 @@ import AVFoundation
 import Observation
 import SwiftUI
 
-/// Thin wrapper over AVPlayer so the glass toolbar has something honest to
-/// drive. When a message has no local recording there is no player, and the
-/// toolbar says so rather than pretending to scrub.
+/// Wraps a single AVPlayer for the life of a thread. Switching takes replaces
+/// the player's item rather than building a new player, so AVKit never tears
+/// down and rebuilds its view. That rebuild is what made the outgoing take
+/// flash up large when you changed takes.
 @MainActor
 @Observable
 final class ThreadPlayer {
@@ -16,45 +17,67 @@ final class ThreadPlayer {
 
     private var observer: Any?
     private var loadedURL: URL?
-    /// A seek requested before the item was ready to honour it.
+    /// A resume point requested before the item was ready to honour it.
     private var pendingSeek: Double?
 
-    var hasMedia: Bool { player != nil }
+    var hasMedia: Bool { player?.currentItem != nil }
 
     func load(_ url: URL?, resumingAt resume: Double = 0) {
         guard url != loadedURL else { return }
-        teardown()
         loadedURL = url
-        guard let url else { return }
+
+        guard let url else {
+            player?.replaceCurrentItem(with: nil)
+            reset()
+            return
+        }
+
+        let engine = existingPlayer()
+        engine.pause()
+        isPlaying = false
+        currentTime = 0
+        duration = 0
         pendingSeek = resume > 0 ? resume : nil
+        engine.replaceCurrentItem(with: AVPlayerItem(url: url))
+        engine.rate = 0
+    }
 
-        let item = AVPlayerItem(url: url)
-        let player = AVPlayer(playerItem: item)
-        player.actionAtItemEnd = .pause
-        self.player = player
-
-        observer = player.addPeriodicTimeObserver(
+    /// Creates the player once, then reuses it for every take in the thread.
+    private func existingPlayer() -> AVPlayer {
+        if let player { return player }
+        let engine = AVPlayer()
+        engine.actionAtItemEnd = .pause
+        player = engine
+        observer = engine.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let total = item.duration.seconds
-                if total.isFinite { self.duration = total }
+            MainActor.assumeIsolated { self?.tick(time.seconds) }
+        }
+        return engine
+    }
 
-                // Apply a resume point as soon as the item can honour it.
-                if let target = self.pendingSeek, item.status == .readyToPlay {
-                    self.pendingSeek = nil
-                    self.seek(to: target)
-                    return
-                }
-                self.currentTime = time.seconds
-            }
+    private func tick(_ seconds: Double) {
+        guard let item = player?.currentItem else { return }
+        let total = item.duration.seconds
+        if total.isFinite, total > 0 { duration = total }
+
+        // Apply the resume point as soon as the item can honour it.
+        if let target = pendingSeek, item.status == .readyToPlay {
+            pendingSeek = nil
+            seek(to: target)
+            return
+        }
+        currentTime = seconds
+
+        // The player stops itself at the end; reflect that in the UI.
+        if isPlaying, duration > 0, seconds >= duration - 0.05 {
+            isPlaying = false
         }
     }
 
     func togglePlay() {
-        guard let player else { return }
+        guard let player, player.currentItem != nil else { return }
         if isPlaying {
             player.pause()
         } else {
@@ -72,19 +95,29 @@ final class ThreadPlayer {
     func seek(to seconds: Double) {
         guard let player else { return }
         let target = max(0, min(seconds, duration > 0 ? duration : seconds))
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
         currentTime = target
     }
 
+    private func reset() {
+        isPlaying = false
+        currentTime = 0
+        duration = 0
+        pendingSeek = nil
+    }
+
+    /// Called when the thread closes, not between takes.
     func teardown() {
         if let observer, let player { player.removeTimeObserver(observer) }
         observer = nil
         player?.pause()
+        player?.replaceCurrentItem(with: nil)
         player = nil
         loadedURL = nil
-        pendingSeek = nil
-        isPlaying = false
-        currentTime = 0
-        duration = 0
+        reset()
     }
 }

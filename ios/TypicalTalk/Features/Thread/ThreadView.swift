@@ -34,7 +34,6 @@ struct ThreadView: View {
                         player: player,
                         autoplayOnLoad: $autoplayOnLoad
                     )
-                    .id(current.id)
 
                     if showTranscript {
                         TranscriptPane(message: current, player: player)
@@ -89,7 +88,7 @@ struct ThreadView: View {
         }
         saveProgress()
         autoplayOnLoad = true
-        withAnimation(.snappy(duration: 0.3)) { selected = message.id }
+        selected = message.id
         store.markWatched(messageID: message.id, in: talkID)
     }
 
