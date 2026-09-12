@@ -9,7 +9,7 @@ struct TypicalTalkApp: App {
             RootView()
                 .environment(store)
                 .preferredColorScheme(.dark)
-                .tint(.white)
+                .tint(Palette.record)
         }
     }
 }

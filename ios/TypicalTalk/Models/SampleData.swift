@@ -56,8 +56,7 @@ enum SampleData {
         let weekendCrew = Talk(
             title: "Weekend Crew",
             members: [you, maya, marcus, elena],
-            messages: [mayaTake, marcusReply, elenaWatched],
-            presenceLine: "Maya is watching"
+            messages: [mayaTake, marcusReply, elenaWatched]
         )
 
         let mayaSolo = Talk(
@@ -74,8 +73,7 @@ enum SampleData {
                     ],
                     chapters: [Chapter(start: 0, title: "Booking")]
                 )
-            ],
-            presenceLine: "Maya sent a new take"
+            ]
         )
 
         let marcusSolo = Talk(

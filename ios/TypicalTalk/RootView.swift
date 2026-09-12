@@ -78,7 +78,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tint(.white)
+        .tint(Palette.record)
         // Anchors the zoom so the recorder grows out of the Record item
         // instead of popping in from nowhere.
         .overlay(alignment: .bottom) {

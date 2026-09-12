@@ -16,7 +16,7 @@ struct TalksView: View {
         switch filter {
         case .all: store.talks
         case .unread: store.talks.filter(\.hasUnread)
-        case .active: store.talks.filter { $0.presenceLine != nil }
+        case .active: store.talks.filter { $0.statusLine != nil }
         }
     }
 
@@ -56,9 +56,12 @@ struct TalksView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Find friends", systemImage: "person.badge.plus") {
+                    Button {
                         showFindFriends = true
+                    } label: {
+                        Label("Find Friends", systemImage: "person.badge.plus")
                     }
+                    .labelStyle(.iconOnly)
                     .matchedTransitionSource(id: "friends", in: morph)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -67,14 +70,22 @@ struct TalksView: View {
                     } label: {
                         Label("Notifications", systemImage: "bell")
                     }
-                    .badge(store.unreadNotificationCount)
+                    .labelStyle(.iconOnly)
+                    .overlay(alignment: .topTrailing) {
+                        if store.unreadNotificationCount > 0 {
+                            Circle()
+                                .fill(Palette.record)
+                                .frame(width: 7, height: 7)
+                                .offset(x: 3, y: -1)
+                        }
+                    }
                     .matchedTransitionSource(id: "notifications", in: morph)
                 }
             }
             .sheet(isPresented: $showFindFriends) {
                 NavigationStack {
                     FindFriendsView()
-                        .navigationTitle("Find friends")
+                        .navigationTitle("Find Friends")
                         .navigationBarTitleDisplayMode(.inline)
                         .background(Palette.canvas)
                 }

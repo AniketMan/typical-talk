@@ -11,6 +11,8 @@ struct ThreadView: View {
     @State private var focused: Message.ID?
     @State private var showTranscript = false
     @State private var showRecorder = false
+    /// Set when the user picked a take, so it starts playing once it loads.
+    @State private var autoplayOnLoad = false
     @Namespace private var replyMorph
 
     private var talk: Talk? { store.talk(id: talkID) }
@@ -31,7 +33,7 @@ struct ThreadView: View {
         }
         .background(Palette.canvas)
         .navigationTitle(talk?.title ?? "Talk")
-        .navigationSubtitle(talk?.presenceLine ?? "")
+        .navigationSubtitle(talk?.statusLine ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -47,13 +49,16 @@ struct ThreadView: View {
                 }
             }
         }
-        .safeAreaBar(edge: .bottom, spacing: 12) { replyBar }
+        .safeAreaBar(edge: .bottom, spacing: 10) { bottomBar }
         .fullScreenCover(isPresented: $showRecorder) {
             RecorderSheet(destination: talkID)
                 .navigationTransition(.zoom(sourceID: "reply", in: replyMorph))
         }
         .task { showTranscript = store.alwaysShowCaptions }
-        .onDisappear { player.teardown() }
+        .onDisappear {
+            saveCurrentProgress()
+            player.teardown()
+        }
     }
 
     private func content(_ talk: Talk) -> some View {
@@ -68,17 +73,15 @@ struct ThreadView: View {
                         message: hero,
                         talkID: talkID,
                         player: player,
-                        showTranscript: $showTranscript
+                        showTranscript: $showTranscript,
+                        autoplayOnLoad: $autoplayOnLoad
                     )
                     .id(hero.id)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
 
                 ForEach(talk.messages.filter { $0.id != hero?.id }) { message in
-                    MessageRow(message: message) {
-                        withAnimation(.snappy(duration: 0.32)) { focused = message.id }
-                        store.markWatched(messageID: message.id, in: talkID)
-                    }
+                    MessageRow(message: message) { play(message) }
                 }
             }
             .padding(.horizontal, 16)
@@ -87,18 +90,61 @@ struct ThreadView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
     }
 
+    /// Stores the current take's position before the player is reused.
+    private func saveCurrentProgress() {
+        guard let hero else { return }
+        let length = player.duration > 0 ? player.duration : hero.duration
+        store.saveProgress(player.currentTime, for: hero.id, duration: length)
+    }
+
+    /// Promotes a take to the player and starts it. Tapping a take should
+    /// play it, which is the whole point of the thread.
+    private func play(_ message: Message) {
+        if message.id == focused || (focused == nil && message.id == talk?.latest?.id) {
+            player.togglePlay()
+            return
+        }
+        saveCurrentProgress()
+        autoplayOnLoad = true
+        withAnimation(.snappy(duration: 0.32)) { focused = message.id }
+        store.markWatched(messageID: message.id, in: talkID)
+    }
+
     /// Starts the backlog at its oldest unwatched take and rolls forward, so
     /// "Play all" actually plays rather than just clearing the badge.
     private func playBacklog(in talk: Talk) {
         guard let oldest = talk.messages.last(where: { !$0.watched && !$0.author.isYou }) else { return }
-        withAnimation(.snappy(duration: 0.32)) { focused = oldest.id }
-        store.markWatched(messageID: oldest.id, in: talkID)
+        play(oldest)
+    }
+
+    private var bottomBar: some View {
+        VStack(spacing: 10) {
+            if let talk, talk.messages.count > 1 { timeline(talk) }
+            replyBar
+        }
+    }
+
+    /// Every take in the thread, newest first, as a scrubbable strip. Tap one
+    /// to play it without losing your place in the conversation.
+    private func timeline(_ talk: Talk) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(talk.messages) { message in
+                    Button { play(message) } label: {
+                        TimelineChip(message: message, isPlaying: message.id == hero?.id)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .scrollIndicators(.hidden)
     }
 
     /// Quick reactions and the reply action, as separate glass pills floating
     /// clear of the tab bar. Never a single slab, and never glass on glass.
     private var replyBar: some View {
-        GlassEffectContainer(spacing: 18) {
+        GlassEffectContainer(spacing: 0) {
             HStack(spacing: 10) {
                 ForEach(["❤️", "😂", "👏"], id: \.self) { emoji in
                     Button(emoji) {
@@ -112,6 +158,9 @@ struct ThreadView: View {
                 }
 
                 Button {
+                    // Recording a reply must not lose your place.
+                    saveCurrentProgress()
+                    if player.isPlaying { player.togglePlay() }
                     showRecorder = true
                 } label: {
                     Label("Reply", systemImage: "video.fill")
@@ -209,5 +258,45 @@ struct MessageRow: View {
             .opacity(message.watched ? 0.72 : 1)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// One take in the thread timeline. Small, and honest about whether it has
+/// media on this device.
+struct TimelineChip: View {
+    let message: Message
+    let isPlaying: Bool
+    @State private var poster: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let poster {
+                Image(uiImage: poster).resizable().scaledToFill()
+            } else {
+                Palette.raised.overlay {
+                    Image(systemName: message.isVoiceOnly ? "waveform" : "play.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Palette.secondaryText)
+                }
+            }
+        }
+        .frame(width: 46, height: 46)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(isPlaying ? Palette.record : Palette.hairline,
+                              lineWidth: isPlaying ? 2 : 0.5)
+        )
+        .overlay(alignment: .topTrailing) {
+            if !message.watched && !message.author.isYou {
+                Circle().fill(Palette.record).frame(width: 7, height: 7).padding(3)
+            }
+        }
+        .task(id: message.id) {
+            if let url = message.localVideoURL {
+                poster = await VideoPoster.firstFrame(of: url)
+            }
+        }
+        .accessibilityLabel("\(message.author.name), \(timecode(message.duration))")
     }
 }

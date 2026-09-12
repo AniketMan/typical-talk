@@ -29,7 +29,7 @@ struct RecorderSheet: View {
                     controlBar
                     recordButton
                     if !camera.takes.isEmpty { takeStrip }
-                    destinationPicker
+                    sendRow
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
@@ -43,18 +43,6 @@ struct RecorderSheet: View {
                         camera.discardAll()
                         dismiss()
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await send() }
-                    } label: {
-                        if isSending {
-                            ProgressView()
-                        } else {
-                            Text("Send").fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(camera.takes.isEmpty || isSending)
                 }
             }
         }
@@ -138,7 +126,7 @@ struct RecorderSheet: View {
     }
 
     private var hud: some View {
-        GlassEffectContainer(spacing: 16) {
+        GlassEffectContainer(spacing: 0) {
             HStack {
                 HStack(spacing: 6) {
                     Circle()
@@ -172,7 +160,7 @@ struct RecorderSheet: View {
     // MARK: - Controls
 
     private var controlBar: some View {
-        GlassEffectContainer(spacing: 20) {
+        GlassEffectContainer(spacing: 0) {
             HStack(spacing: 4) {
                 toggle("3s lock", "timer", on: handsFree) {
                     handsFree.toggle()
@@ -210,10 +198,10 @@ struct RecorderSheet: View {
         } label: {
             Image(systemName: symbol)
                 .font(.body)
-                .foregroundStyle(on ? .black : .white.opacity(0.9))
+                .foregroundStyle(on ? .white : .white.opacity(0.9))
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background {
-                    if on { Capsule().fill(.white) }
+                    if on { Capsule().fill(Palette.record) }
                 }
         }
         .buttonStyle(.plain)
@@ -291,25 +279,55 @@ struct RecorderSheet: View {
         }
     }
 
-    private var destinationPicker: some View {
-        Menu {
-            Picker("Thread", selection: $target) {
-                ForEach(store.talks) { talk in
-                    Text(talk.title).tag(Optional(talk.id))
+    /// Destination and send, together at the bottom where the thumb is.
+    private var sendRow: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Picker("Thread", selection: $target) {
+                    ForEach(store.talks) { talk in
+                        Text(talk.title).tag(Optional(talk.id))
+                    }
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.footnote)
+                    Text(targetTalk?.title ?? "Choose a thread")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(Palette.secondaryText)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
             }
-        } label: {
-            HStack {
-                Label(targetTalk?.title ?? "Choose a thread", systemImage: "bubble.left.and.bubble.right")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(.caption2)
+            .glassEffect(.regular.interactive(), in: .capsule)
+
+            Button {
+                Task { await send() }
+            } label: {
+                Group {
+                    if isSending {
+                        ProgressView().tint(.white)
+                    } else {
+                        Label("Send", systemImage: "arrow.up")
+                            .font(.subheadline.weight(.semibold))
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+                .frame(minWidth: 92, minHeight: 50)
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .buttonStyle(.plain)
+            .glassEffect(
+                .regular.tint(camera.takes.isEmpty ? nil : Palette.record).interactive(),
+                in: .capsule
+            )
+            .disabled(camera.takes.isEmpty || isSending)
+            .opacity(camera.takes.isEmpty ? 0.5 : 1)
+            .animation(.snappy(duration: 0.25), value: camera.takes.isEmpty)
         }
-        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
     // MARK: - Sending

@@ -94,8 +94,6 @@ struct Talk: Identifiable, Hashable, Sendable {
     var members: [Person]
     /// Newest first, everywhere (locked ordering decision).
     var messages: [Message]
-    /// Quiet presence line under the title, never a popup.
-    var presenceLine: String?
 
     var isGroup: Bool { members.count > 2 }
     var latest: Message? { messages.first }
@@ -111,12 +109,29 @@ struct Talk: Identifiable, Hashable, Sendable {
         messages.filter { !$0.watched && !$0.author.isYou }.map(\.duration).reduce(0, +)
     }
 
-    init(id: UUID = UUID(), title: String, members: [Person], messages: [Message], presenceLine: String? = nil) {
+    init(id: UUID = UUID(), title: String, members: [Person], messages: [Message]) {
         self.id = id
         self.title = title
         self.members = members
         self.messages = messages
-        self.presenceLine = presenceLine
+    }
+
+    /// The quiet line under the title. Derived from what is actually true of
+    /// this thread, so it can never claim someone is watching when no one is.
+    var statusLine: String? {
+        if let newest = messages.first, !newest.watched, !newest.author.isYou {
+            let who = newest.author.name.split(separator: " ").first.map(String.init) ?? newest.author.name
+            return unreadCount > 1
+                ? "\(who) and others sent \(unreadCount) new takes"
+                : "\(who) sent a new take"
+        }
+        if let mine = messages.first, mine.author.isYou {
+            return mine.watched ? "Sent" : "Sending"
+        }
+        if let newest = messages.first {
+            return "Watched \(relativeLabel(newest.sentAt).lowercased())"
+        }
+        return nil
     }
 }
 

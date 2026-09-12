@@ -3,123 +3,81 @@ import SwiftUI
 
 /// One row in the Talks list. Video is visually primary: a large 16:9 preview,
 /// never a thumbnail, with the transcript line underneath.
+/// One row in the Talks list. Deliberately compact so a long list stays
+/// scannable: the big cinematic treatment belongs in the thread, not here.
+/// A small thumbnail stands in for the newest take.
 struct TalkCard: View {
     let talk: Talk
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            head
-            preview
-            if let latest = talk.latest {
-                Text(latest.summaryLine)
-                    .font(.subheadline)
-                    .foregroundStyle(latest.watched ? Palette.secondaryText : .white)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
-        }
-        .contentCard()
-    }
-
-    private var head: some View {
         HStack(spacing: 12) {
             Monogram(text: talk.initials, size: 44)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
                     Text(talk.title)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
                     if talk.hasUnread {
-                        Circle().fill(Palette.unread).frame(width: 8, height: 8)
+                        Circle().fill(Palette.record).frame(width: 7, height: 7)
                     }
-                }
-                if let presence = talk.presenceLine {
-                    HStack(spacing: 6) {
-                        Circle().fill(Palette.presence).frame(width: 6, height: 6)
-                        Text(presence)
+                    Spacer(minLength: 4)
+                    if let latest = talk.latest {
+                        Text(relativeLabel(latest.sentAt))
                             .font(.caption2)
-                            .foregroundStyle(Palette.presence)
+                            .foregroundStyle(Palette.secondaryText)
                     }
-                } else if let latest = talk.latest, latest.watched {
-                    Text("Seen \(relativeLabel(latest.sentAt).lowercased())")
+                }
+
+                if let status = talk.statusLine {
+                    Text(status)
                         .font(.caption2)
+                        .foregroundStyle(talk.hasUnread ? Palette.record : Palette.secondaryText)
+                        .lineLimit(1)
+                }
+
+                if let latest = talk.latest {
+                    Text(latest.summaryLine)
+                        .font(.caption)
                         .foregroundStyle(Palette.secondaryText)
+                        .lineLimit(1)
                 }
             }
 
-            Spacer(minLength: 6)
-
-            if let latest = talk.latest {
-                Text(relativeLabel(latest.sentAt))
-                    .font(.caption)
-                    .foregroundStyle(Palette.secondaryText)
-            }
+            thumbnail
         }
+        .contentCard(padding: 10, radius: 18)
     }
 
+    /// A small still of the newest take, only when there is one to show.
     @ViewBuilder
-    private var preview: some View {
-        ZStack {
-            if let latest = talk.latest, let url = latest.localVideoURL {
-                VideoPoster(url: url)
-            } else {
-                LinearGradient(
-                    colors: [Color.white.opacity(0.07), Color.black.opacity(0.35)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .overlay(alignment: .topLeading) {
-                    Image(systemName: talk.latest?.isVoiceOnly == true ? "waveform" : "video")
-                        .font(.footnote)
-                        .foregroundStyle(Palette.secondaryText)
-                        .padding(12)
+    private var thumbnail: some View {
+        if let latest = talk.latest {
+            ZStack {
+                if let url = latest.localVideoURL {
+                    VideoPoster(url: url)
+                } else {
+                    Palette.canvas
                 }
+                Image(systemName: latest.isVoiceOnly ? "waveform" : "play.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .shadow(radius: 2)
             }
-
-            // Clear glass over media, with a dimming scrim so the glyph stays
-            // legible. This is the only place clear glass is allowed.
-            Image(systemName: "play.fill")
-                .font(.title2)
-                .foregroundStyle(.white)
-                .frame(width: 50, height: 50)
-                .background(.black.opacity(0.28), in: .circle)
-                .glassEffect(.clear, in: .circle)
-        }
-        .aspectRatio(16 / 9, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(alignment: .bottomTrailing) {
-            if let latest = talk.latest {
+            .frame(width: 52, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: 0.5)
+            )
+            .overlay(alignment: .bottomTrailing) {
                 Text(timecode(latest.duration))
-                    .font(.caption2.monospacedDigit())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.black.opacity(0.6), in: .capsule)
-                    .padding(10)
+                    .font(.system(size: 9).monospacedDigit())
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 1)
+                    .background(.black.opacity(0.65), in: .capsule)
+                    .padding(3)
             }
-        }
-        .overlay(alignment: .bottom) { chapterTrack }
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Palette.hairline, lineWidth: 0.5)
-        )
-    }
-
-    /// Chapter segments drawn straight onto the preview, so the shape of the
-    /// message is readable before you open it.
-    @ViewBuilder
-    private var chapterTrack: some View {
-        if let latest = talk.latest, !latest.chapters.isEmpty {
-            HStack(spacing: 2) {
-                ForEach(latest.chapters) { chapter in
-                    Capsule()
-                        .fill(.white.opacity(latest.watched ? 0.85 : 0.35))
-                        .frame(height: 3)
-                        .accessibilityLabel(chapter.title)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
         }
     }
 }

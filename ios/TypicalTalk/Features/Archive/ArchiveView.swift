@@ -70,11 +70,11 @@ struct ArchiveView: View {
 
     @ViewBuilder
     private var browse: some View {
-        if store.highlights.isEmpty {
+        if store.derivedHighlights.isEmpty {
             emptyArchive
         } else {
             sectionHeader("Highlights", symbol: "sparkles")
-            ForEach(store.highlights) { highlight in
+            ForEach(store.derivedHighlights) { highlight in
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(highlight.talkTitle).font(.headline)

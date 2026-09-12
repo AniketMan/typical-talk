@@ -17,6 +17,10 @@ final class AppStore {
     var notificationsEnabled = true
 
     /// Threads the user has invited people into during this session.
+    /// Where the user got to in each take. Leaving a thread, recording a
+    /// reply, or switching takes all come back to the same second.
+    private var playbackPositions: [Message.ID: Double] = [:]
+
     var invitedContacts: Set<String> = []
     var skippedContacts: Set<String> = []
     var contactsSynced = false
@@ -25,15 +29,84 @@ final class AppStore {
         let seeded = SampleData.talks()
         talks = seeded
         bookmarks = SampleData.bookmarks(for: seeded)
-        highlights = SampleData.highlights
-        notifications = SampleData.notifications()
+        highlights = []
+        notifications = []
     }
 
-    var unreadNotificationCount: Int { notifications.count }
+    var unreadNotificationCount: Int { derivedNotifications.count }
+
+    /// Highlights are built from transcripts already on the phone, never
+    /// written in advance. A thread with nothing transcribed produces nothing.
+    var derivedHighlights: [Highlight] {
+        talks.compactMap { talk in
+            let lines = talk.messages
+                .filter { !$0.transcript.isEmpty }
+                .prefix(4)
+                .compactMap { $0.transcript.first?.text }
+            guard lines.count >= 2 else { return nil }
+            return Highlight(
+                talkTitle: talk.title,
+                subtitle: "^[\(talk.messages.count) take](inflect: true) on this device",
+                points: Array(lines),
+                duration: talk.messages.prefix(4).map(\.duration).reduce(0, +)
+            )
+        }
+    }
+
+    /// Notifications come from the model's own state: reactions that exist,
+    /// and takes of yours that have been watched.
+    var derivedNotifications: [AppNotification] {
+        var result: [AppNotification] = []
+        for talk in talks {
+            for message in talk.messages {
+                if !message.reactions.isEmpty, message.author.isYou {
+                    result.append(AppNotification(
+                        kind: .reaction,
+                        text: "\(message.reactions.joined()) on your take",
+                        detail: talk.title,
+                        at: message.sentAt
+                    ))
+                }
+                if message.author.isYou, message.watched {
+                    result.append(AppNotification(
+                        kind: .watchReceipt,
+                        text: "Your take was watched",
+                        detail: talk.title,
+                        at: message.sentAt
+                    ))
+                }
+            }
+        }
+        return result.sorted { $0.at > $1.at }
+    }
 
     func talk(id: Talk.ID) -> Talk? { talks.first { $0.id == id } }
 
     func binding(for id: Talk.ID) -> Int? { talks.firstIndex { $0.id == id } }
+
+    // MARK: - Resume
+
+    func resumePosition(for messageID: Message.ID) -> Double {
+        playbackPositions[messageID] ?? 0
+    }
+
+    /// Saves progress, unless the take is essentially finished, in which case
+    /// it should start again from the top next time.
+    func saveProgress(_ time: Double, for messageID: Message.ID, duration: Double) {
+        guard time > 1, duration > 0 else {
+            playbackPositions[messageID] = nil
+            return
+        }
+        if time >= duration - 1.5 {
+            playbackPositions[messageID] = nil
+        } else {
+            playbackPositions[messageID] = time
+        }
+    }
+
+    func clearProgress(for messageID: Message.ID) {
+        playbackPositions[messageID] = nil
+    }
 
     // MARK: - Mutations
 

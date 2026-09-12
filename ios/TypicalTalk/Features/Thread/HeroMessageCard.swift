@@ -8,6 +8,7 @@ struct HeroMessageCard: View {
     let talkID: Talk.ID
     @Bindable var player: ThreadPlayer
     @Binding var showTranscript: Bool
+    @Binding var autoplayOnLoad: Bool
     @Environment(AppStore.self) private var store
 
     /// Effective duration: the real asset when we have one, the stored length
@@ -57,9 +58,24 @@ struct HeroMessageCard: View {
         .task(id: message.id) {
             player.load(message.localVideoURL)
             store.markWatched(messageID: message.id, in: talkID)
-            if store.autoplayNewTakes, player.hasMedia, !player.isPlaying {
+            // Pick up exactly where this take was left off.
+            let resume = store.resumePosition(for: message.id)
+            if resume > 0 { player.seek(to: resume) }
+            // Play when the user asked for this take, or when they have
+            // autoplay switched on.
+            if player.hasMedia, !player.isPlaying, autoplayOnLoad || store.autoplayNewTakes {
                 player.togglePlay()
             }
+            autoplayOnLoad = false
+        }
+        // Keep the resume point current while it plays, so leaving at any
+        // moment comes back to the right second.
+        .onChange(of: player.currentTime) { _, now in
+            guard player.isPlaying else { return }
+            store.saveProgress(now, for: message.id, duration: length)
+        }
+        .onDisappear {
+            store.saveProgress(player.currentTime, for: message.id, duration: length)
         }
     }
 
@@ -68,6 +84,9 @@ struct HeroMessageCard: View {
         if let avPlayer = player.player {
             VideoPlayer(player: avPlayer)
                 .disabled(true)
+                // Tap the video to play or pause, the way every player works.
+                .contentShape(.rect)
+                .onTapGesture { player.togglePlay() }
         } else if message.isVoiceOnly {
             Palette.raised.overlay { WaveformPlaceholder() }
         } else {
@@ -118,7 +137,7 @@ struct HeroMessageCard: View {
     // MARK: - Playback toolbar
 
     private var toolbar: some View {
-        GlassEffectContainer(spacing: 14) {
+        GlassEffectContainer(spacing: 0) {
             VStack(spacing: 10) {
                 scrubber
                 controls
@@ -282,13 +301,13 @@ struct SpeedSlider: View {
                 } label: {
                     Text(step == 1.0 ? "1x" : "\(step.formatted(.number.precision(.fractionLength(0...2))))x")
                         .font(.caption2.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(abs(rate - step) < 0.01 ? .black : .white.opacity(0.72))
+                        .foregroundStyle(abs(rate - step) < 0.01 ? .white : .white.opacity(0.72))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                         .background {
                             if abs(rate - step) < 0.01 {
-                                Capsule().fill(.white)
+                                Capsule().fill(Palette.record)
                             }
                         }
                 }

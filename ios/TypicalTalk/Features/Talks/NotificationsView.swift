@@ -9,7 +9,7 @@ struct NotificationsView: View {
     var body: some View {
         NavigationStack {
             List {
-                if store.notifications.isEmpty {
+                if store.derivedNotifications.isEmpty {
                     ContentUnavailableView(
                         "Nothing new",
                         systemImage: "bell.slash",
@@ -17,7 +17,7 @@ struct NotificationsView: View {
                     )
                     .listRowBackground(Color.clear)
                 } else {
-                    ForEach(store.notifications) { item in
+                    ForEach(store.derivedNotifications) { item in
                         HStack(spacing: 12) {
                             Image(systemName: item.symbol)
                                 .font(.footnote.weight(.semibold))
@@ -36,7 +36,6 @@ struct NotificationsView: View {
                         }
                         .listRowBackground(Palette.raised)
                     }
-                    .onDelete { store.notifications.remove(atOffsets: $0) }
                 }
             }
             .listStyle(.insetGrouped)
@@ -47,12 +46,6 @@ struct NotificationsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Clear") {
-                        withAnimation(.snappy) { store.notifications.removeAll() }
-                    }
-                    .disabled(store.notifications.isEmpty)
                 }
             }
         }
