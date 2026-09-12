@@ -1,9 +1,9 @@
 import AVKit
 import SwiftUI
 
-/// The take you are watching. Controls sit over the video and get out of the
-/// way while it plays, the way every video player does. Tap the video to bring
-/// them back.
+/// The take you are watching. Nothing is drawn over the video: tap it to play
+/// or pause, and the scrubber, speed and bookmark sit underneath where there
+/// is room for them. The sender and time live in the navigation subtitle.
 struct TakePlayerView: View {
     let message: Message
     let talkID: Talk.ID
@@ -11,8 +11,10 @@ struct TakePlayerView: View {
     @Binding var autoplayOnLoad: Bool
     @Environment(AppStore.self) private var store
 
-    @State private var chromeVisible = true
-    @State private var hideTask: Task<Void, Never>?
+    /// A brief glyph after a tap, so the tap is acknowledged without leaving
+    /// anything sitting on top of the picture.
+    @State private var tapFeedback: String?
+    @State private var feedbackTask: Task<Void, Never>?
 
     private var length: Double {
         player.duration > 0 ? player.duration : message.duration
@@ -23,32 +25,45 @@ struct TakePlayerView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black
-            media
+        VStack(spacing: 0) {
+            video
+            controls
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .top) { header }
-        .overlay(alignment: .bottom) { controls }
-        .contentShape(.rect)
-        .onTapGesture { toggleChrome() }
         .task(id: message.id) { await start() }
-        .onChange(of: player.isPlaying) { _, playing in
-            if playing { scheduleHide() } else { reveal() }
-        }
         .onChange(of: player.currentTime) { _, now in
             guard player.isPlaying else { return }
             store.saveProgress(now, for: message.id, duration: length)
         }
-        .onDisappear {
-            hideTask?.cancel()
-            store.saveProgress(player.currentTime, for: message.id, duration: length)
+        .onDisappear { feedbackTask?.cancel() }
+    }
+
+    // MARK: - Video
+
+    private var video: some View {
+        ZStack {
+            Color.black
+            media
+            if let tapFeedback {
+                Image(systemName: tapFeedback)
+                    .font(.system(size: 44))
+                    .foregroundStyle(.white)
+                    .padding(22)
+                    .background(.black.opacity(0.35), in: .circle)
+                    .transition(.opacity.combined(with: .scale(scale: 1.25)))
+                    .allowsHitTesting(false)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(.rect)
+        .onTapGesture { togglePlayback() }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
     }
 
     @ViewBuilder
     private var media: some View {
         if let avPlayer = player.player {
+            // Aspect fit, so the take is always shown at its real shape.
             VideoPlayer(player: avPlayer)
                 .disabled(true)
         } else if message.isVoiceOnly {
@@ -65,64 +80,50 @@ struct TakePlayerView: View {
         }
     }
 
-    // MARK: - Chrome
-
-    private var header: some View {
-        HStack {
-            HStack(spacing: 9) {
-                Monogram(text: message.author.initials, size: Scale.Avatar.small)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(message.author.name).font(.caption.weight(.semibold))
-                    Text(relativeLabel(message.sentAt))
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .glassEffect(.clear, in: .capsule)
-
-            Spacer()
-
-            if let activeChapter {
-                Text(activeChapter.title)
-                    .font(.caption2.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .glassEffect(.clear, in: .capsule)
-            }
-        }
-        .padding(12)
-        .opacity(chromeVisible ? 1 : 0)
-        .animation(.easeInOut(duration: 0.25), value: chromeVisible)
-        .allowsHitTesting(chromeVisible)
-    }
+    // MARK: - Controls, underneath
 
     private var controls: some View {
-        GlassEffectContainer(spacing: 0) {
-            VStack(spacing: 10) {
-                scrubber
-                transport
+        VStack(spacing: 10) {
+            scrubber
+            HStack(spacing: 10) {
+                SpeedSlider(rate: Binding(
+                    get: { Double(player.rate) },
+                    set: { player.setRate(Float($0)) }
+                ))
+
+                Button {
+                    store.addBookmark(at: player.currentTime, messageID: message.id, in: talkID)
+                } label: {
+                    Image(systemName: message.bookmarkedAt.isEmpty ? "bookmark" : "bookmark.fill")
+                        .font(.footnote.weight(.semibold))
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.glass)
+                .disabled(!player.hasMedia)
+                .accessibilityLabel("Bookmark this moment")
             }
-            .padding(12)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Scale.Radius.card, style: .continuous))
-            .padding(12)
         }
-        .opacity(chromeVisible ? 1 : 0)
-        .animation(.easeInOut(duration: 0.25), value: chromeVisible)
-        .allowsHitTesting(chromeVisible)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
     }
 
     private var scrubber: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             HStack {
                 Text(timecode(player.currentTime))
                     .font(.caption2.monospacedDigit().weight(.semibold))
                 Spacer()
+                if let activeChapter {
+                    Text(activeChapter.title)
+                        .font(.caption2)
+                        .foregroundStyle(Palette.secondaryText)
+                        .lineLimit(1)
+                    Spacer()
+                }
                 Text(timecode(length))
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Palette.secondaryText)
             }
 
             GeometryReader { geometry in
@@ -130,110 +131,63 @@ struct TakePlayerView: View {
                 let progress = length > 0 ? min(1, player.currentTime / length) : 0
 
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.22))
+                    Capsule().fill(.white.opacity(0.2))
                     Capsule().fill(Palette.record).frame(width: width * progress)
 
                     ForEach(message.chapters.dropFirst()) { chapter in
                         Capsule()
-                            .fill(.black.opacity(0.55))
+                            .fill(Palette.canvas.opacity(0.7))
                             .frame(width: 2)
                             .offset(x: width * (length > 0 ? chapter.start / length : 0))
                     }
 
                     Circle()
                         .fill(.white)
-                        .frame(width: 13, height: 13)
+                        .frame(width: 14, height: 14)
                         .shadow(radius: 2)
-                        .offset(x: max(0, width * progress - 6.5))
+                        .offset(x: max(0, width * progress - 7))
                 }
                 .contentShape(.rect)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
                             guard player.hasMedia, width > 0 else { return }
-                            reveal()
                             player.seek(to: length * Double(max(0, min(1, value.location.x / width))))
                         }
-                        .onEnded { _ in if player.isPlaying { scheduleHide() } }
                 )
             }
-            .frame(height: 14)
-        }
-    }
-
-    private var transport: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Button {
-                    player.togglePlay()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.glass)
-                .disabled(!player.hasMedia)
-
-                Spacer()
-
-                Button {
-                    store.addBookmark(at: player.currentTime, messageID: message.id, in: talkID)
-                    reveal()
-                } label: {
-                    Image(systemName: message.bookmarkedAt.isEmpty ? "bookmark" : "bookmark.fill")
-                        .font(.footnote.weight(.semibold))
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.glass)
-                .disabled(!player.hasMedia)
-            }
-
-            SpeedSlider(rate: Binding(
-                get: { Double(player.rate) },
-                set: { player.setRate(Float($0)); reveal() }
-            ))
+            .frame(height: 16)
         }
     }
 
     // MARK: - Behaviour
 
-    private func start() async {
-        player.load(message.localVideoURL)
-        store.markWatched(messageID: message.id, in: talkID)
+    private func togglePlayback() {
+        guard player.hasMedia else { return }
+        player.togglePlay()
+        show(player.isPlaying ? "play.fill" : "pause.fill")
+    }
 
-        // Pick up exactly where this take was left off.
-        let resume = store.resumePosition(for: message.id)
-        if resume > 0 { player.seek(to: resume) }
+    private func show(_ symbol: String) {
+        feedbackTask?.cancel()
+        withAnimation(.easeOut(duration: 0.15)) { tapFeedback = symbol }
+        feedbackTask = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.25)) { tapFeedback = nil }
+        }
+    }
+
+    private func start() async {
+        // The resume point goes through load() because seeking a player whose
+        // item is not ready yet is silently dropped.
+        player.load(message.localVideoURL, resumingAt: store.resumePosition(for: message.id))
+        store.markWatched(messageID: message.id, in: talkID)
 
         if player.hasMedia, !player.isPlaying, autoplayOnLoad || store.autoplayNewTakes {
             player.togglePlay()
         }
         autoplayOnLoad = false
-        reveal()
-    }
-
-    private func toggleChrome() {
-        if chromeVisible && player.isPlaying {
-            withAnimation { chromeVisible = false }
-            hideTask?.cancel()
-        } else {
-            reveal()
-        }
-    }
-
-    /// Shows the controls, and starts the countdown again if it is playing.
-    private func reveal() {
-        withAnimation { chromeVisible = true }
-        if player.isPlaying { scheduleHide() } else { hideTask?.cancel() }
-    }
-
-    private func scheduleHide() {
-        hideTask?.cancel()
-        hideTask = Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled, player.isPlaying else { return }
-            withAnimation { chromeVisible = false }
-        }
     }
 }
 
@@ -253,7 +207,7 @@ struct SpeedSlider: View {
                         .foregroundStyle(abs(rate - step) < 0.01 ? .white : .white.opacity(0.72))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 8)
                         .background {
                             if abs(rate - step) < 0.01 { Capsule().fill(Palette.record) }
                         }

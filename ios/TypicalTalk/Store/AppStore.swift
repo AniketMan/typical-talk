@@ -133,11 +133,14 @@ final class AppStore {
     /// Saves progress, unless the take is essentially finished, in which case
     /// it should start again from the top next time.
     func saveProgress(_ time: Double, for messageID: Message.ID, duration: Double) {
-        guard time > 1, duration > 0 else {
+        guard time > 0.4, duration > 0 else {
             playbackPositions[messageID] = nil
             return
         }
-        if time >= duration - 1.5 {
+        // Scaled to the clip: a ten second take should not count as finished
+        // with a second and a half still to run.
+        let endZone = min(1.5, max(0.4, duration * 0.06))
+        if time >= duration - endZone {
             playbackPositions[messageID] = nil
         } else {
             playbackPositions[messageID] = time

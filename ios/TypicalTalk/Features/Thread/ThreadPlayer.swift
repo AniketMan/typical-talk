@@ -16,14 +16,17 @@ final class ThreadPlayer {
 
     private var observer: Any?
     private var loadedURL: URL?
+    /// A seek requested before the item was ready to honour it.
+    private var pendingSeek: Double?
 
     var hasMedia: Bool { player != nil }
 
-    func load(_ url: URL?) {
+    func load(_ url: URL?, resumingAt resume: Double = 0) {
         guard url != loadedURL else { return }
         teardown()
         loadedURL = url
         guard let url else { return }
+        pendingSeek = resume > 0 ? resume : nil
 
         let item = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: item)
@@ -36,9 +39,16 @@ final class ThreadPlayer {
         ) { [weak self] time in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.currentTime = time.seconds
                 let total = item.duration.seconds
                 if total.isFinite { self.duration = total }
+
+                // Apply a resume point as soon as the item can honour it.
+                if let target = self.pendingSeek, item.status == .readyToPlay {
+                    self.pendingSeek = nil
+                    self.seek(to: target)
+                    return
+                }
+                self.currentTime = time.seconds
             }
         }
     }
@@ -72,6 +82,7 @@ final class ThreadPlayer {
         player?.pause()
         player = nil
         loadedURL = nil
+        pendingSeek = nil
         isPlaying = false
         currentTime = 0
         duration = 0
