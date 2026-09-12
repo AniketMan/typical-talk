@@ -40,7 +40,7 @@ struct ThreadView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .safeAreaBar(edge: .bottom, spacing: 10) { bottomBar(talk) }
+                .safeAreaBar(edge: .bottom, spacing: 8) { bottomBar(talk) }
             } else {
                 ContentUnavailableView("Talk not found", systemImage: "questionmark.circle")
             }
@@ -94,11 +94,14 @@ struct ThreadView: View {
 
     // MARK: - Bottom bar
 
+    /// One row: the takes on the left, the reply action pinned on the right.
     private func bottomBar(_ talk: Talk) -> some View {
-        VStack(spacing: 10) {
-            if talk.messages.count > 1 { timeline(talk) }
-            replyBar
+        HStack(spacing: 12) {
+            timeline(talk)
+            replyButton
         }
+        .padding(.trailing, 16)
+        .padding(.bottom, 6)
     }
 
     /// Every take in the thread, oldest on the left so the newest sits on the
@@ -134,6 +137,7 @@ struct ThreadView: View {
                 .scrollTargetLayout()
             }
             .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity)
             .onAppear { scroll(proxy, to: current?.id) }
             .onChange(of: current?.id) { _, id in scroll(proxy, to: id, animated: true) }
             .onChange(of: talk.messages.count) { _, _ in
@@ -151,37 +155,28 @@ struct ThreadView: View {
         }
     }
 
-    private var replyBar: some View {
-        GlassEffectContainer(spacing: 0) {
-            HStack(spacing: 10) {
-                ForEach(["❤️", "😂", "👏"], id: \.self) { emoji in
-                    Button(emoji) {
-                        if let current {
-                            store.toggleReaction(emoji, messageID: current.id, in: talkID)
-                        }
-                    }
-                    .font(.title3)
-                    .frame(width: 44, height: 44)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                }
-
-                Button {
-                    // Recording a reply must not lose your place.
-                    saveProgress()
-                    if player.isPlaying { player.togglePlay() }
-                    showRecorder = true
-                } label: {
-                    Label("Reply", systemImage: "video.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.tint(Palette.record).interactive(), in: .capsule)
-                .matchedTransitionSource(id: "reply", in: replyMorph)
+    private var replyButton: some View {
+        Button {
+            // Recording a reply must not lose your place.
+            saveProgress()
+            if player.isPlaying { player.togglePlay() }
+            showRecorder = true
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "video.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(Palette.record, in: .circle)
+                Text("Reply")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+            .frame(width: 54)
         }
+        .buttonStyle(.plain)
+        .matchedTransitionSource(id: "reply", in: replyMorph)
+        .accessibilityLabel("Record a reply")
     }
 }
 
