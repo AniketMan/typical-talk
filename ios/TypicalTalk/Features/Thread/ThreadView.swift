@@ -1,139 +1,129 @@
 import AVKit
 import SwiftUI
 
-/// The cinematic thread. Newest at the top, everywhere, per the locked
-/// ordering decision. The first message is the hero with a full player; the
-/// rest are compact rows that promote themselves when tapped.
+/// One thread, one player. The take you selected fills the screen, its
+/// transcript sits under it, and the strip along the bottom switches between
+/// takes. Nothing else is stacked in the way, so tapping a take in the strip
+/// visibly changes what is playing.
 struct ThreadView: View {
     let talkID: Talk.ID
     @Environment(AppStore.self) private var store
     @State private var player = ThreadPlayer()
-    @State private var focused: Message.ID?
+    @State private var selected: Message.ID?
     @State private var showTranscript = false
     @State private var showRecorder = false
-    /// Set when the user picked a take, so it starts playing once it loads.
     @State private var autoplayOnLoad = false
     @Namespace private var replyMorph
 
     private var talk: Talk? { store.talk(id: talkID) }
 
-    private var hero: Message? {
+    /// The take currently in the player. Defaults to the newest.
+    private var current: Message? {
         guard let talk else { return nil }
-        if let focused, let match = talk.messages.first(where: { $0.id == focused }) { return match }
+        if let selected, let match = talk.messages.first(where: { $0.id == selected }) { return match }
         return talk.latest
     }
 
     var body: some View {
         Group {
-            if let talk {
-                content(talk)
+            if let talk, let current {
+                VStack(spacing: 0) {
+                    TakePlayerView(
+                        message: current,
+                        talkID: talkID,
+                        player: player,
+                        autoplayOnLoad: $autoplayOnLoad
+                    )
+                    .id(current.id)
+
+                    if showTranscript {
+                        TranscriptPane(message: current, player: player)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .safeAreaBar(edge: .bottom, spacing: 10) { bottomBar(talk) }
             } else {
                 ContentUnavailableView("Talk not found", systemImage: "questionmark.circle")
             }
         }
         .background(Palette.canvas)
         .navigationTitle(talk?.title ?? "Talk")
-        .navigationSubtitle(talk?.statusLine ?? "")
+        .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Mark all watched", systemImage: "checkmark.circle") {
-                        store.markAllWatched(in: talkID)
-                    }
-                    Button(showTranscript ? "Hide transcript" : "Show transcript", systemImage: "text.alignleft") {
-                        withAnimation(.snappy) { showTranscript.toggle() }
-                    }
+                Button {
+                    withAnimation(.snappy(duration: 0.28)) { showTranscript.toggle() }
                 } label: {
-                    Label("More", systemImage: "ellipsis")
+                    Label("Transcript", systemImage: showTranscript ? "captions.bubble.fill" : "captions.bubble")
                 }
             }
         }
-        .safeAreaBar(edge: .bottom, spacing: 10) { bottomBar }
         .fullScreenCover(isPresented: $showRecorder) {
             RecorderSheet(destination: talkID)
                 .navigationTransition(.zoom(sourceID: "reply", in: replyMorph))
         }
         .task { showTranscript = store.alwaysShowCaptions }
-        // Transcribe this thread on device once it is actually opened.
         .task(id: talkID) { await store.ensureTranscripts(in: talkID) }
         .onDisappear {
-            saveCurrentProgress()
+            saveProgress()
             player.teardown()
         }
     }
 
-    private func content(_ talk: Talk) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 14) {
-                if talk.unreadCount > 0 {
-                    CatchUpCard(talk: talk) { playBacklog(in: talk) }
-                }
+    // MARK: - Switching takes
 
-                if let hero {
-                    HeroMessageCard(
-                        message: hero,
-                        talkID: talkID,
-                        player: player,
-                        showTranscript: $showTranscript,
-                        autoplayOnLoad: $autoplayOnLoad
-                    )
-                    .id(hero.id)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                }
-
-                ForEach(talk.messages.filter { $0.id != hero?.id }) { message in
-                    MessageRow(message: message) { play(message) }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
-        .scrollEdgeEffectStyle(.soft, for: .top)
+    /// Stores where the current take got to, before the player is reused.
+    private func saveProgress() {
+        guard let current else { return }
+        let length = player.duration > 0 ? player.duration : current.duration
+        store.saveProgress(player.currentTime, for: current.id, duration: length)
     }
 
-    /// Stores the current take's position before the player is reused.
-    private func saveCurrentProgress() {
-        guard let hero else { return }
-        let length = player.duration > 0 ? player.duration : hero.duration
-        store.saveProgress(player.currentTime, for: hero.id, duration: length)
-    }
-
-    /// Promotes a take to the player and starts it. Tapping a take should
-    /// play it, which is the whole point of the thread.
-    private func play(_ message: Message) {
-        if message.id == focused || (focused == nil && message.id == talk?.latest?.id) {
+    /// Tapping the take already playing toggles it. Tapping a different one
+    /// switches the player to it and picks up where that take was left off.
+    private func select(_ message: Message) {
+        if message.id == current?.id {
             player.togglePlay()
             return
         }
-        saveCurrentProgress()
+        saveProgress()
         autoplayOnLoad = true
-        withAnimation(.snappy(duration: 0.32)) { focused = message.id }
+        withAnimation(.snappy(duration: 0.3)) { selected = message.id }
         store.markWatched(messageID: message.id, in: talkID)
     }
 
-    /// Starts the backlog at its oldest unwatched take and rolls forward, so
-    /// "Play all" actually plays rather than just clearing the badge.
-    private func playBacklog(in talk: Talk) {
-        guard let oldest = talk.messages.last(where: { !$0.watched && !$0.author.isYou }) else { return }
-        play(oldest)
-    }
+    // MARK: - Bottom bar
 
-    private var bottomBar: some View {
+    private func bottomBar(_ talk: Talk) -> some View {
         VStack(spacing: 10) {
-            if let talk, talk.messages.count > 1 { timeline(talk) }
+            if talk.messages.count > 1 { timeline(talk) }
             replyBar
         }
     }
 
-    /// Every take in the thread, newest first, as a scrubbable strip. Tap one
-    /// to play it without losing your place in the conversation.
+    /// Every take in the thread, newest first. This is the only way to move
+    /// between takes, so it is always visible.
     private func timeline(_ talk: Talk) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
                 ForEach(talk.messages) { message in
-                    Button { play(message) } label: {
-                        TimelineChip(message: message, isPlaying: message.id == hero?.id)
+                    Button { select(message) } label: {
+                        VStack(spacing: 4) {
+                            TakeThumbnail(
+                                message: message,
+                                size: .small,
+                                isActive: message.id == current?.id,
+                                showsDuration: false
+                            )
+                            Text(message.author.isYou ? "You" : message.author.name)
+                                .font(.system(size: 10))
+                                .foregroundStyle(
+                                    message.id == current?.id ? .white : Palette.secondaryText
+                                )
+                                .lineLimit(1)
+                        }
+                        .frame(width: 54)
                     }
                     .buttonStyle(.plain)
                 }
@@ -143,15 +133,13 @@ struct ThreadView: View {
         .scrollIndicators(.hidden)
     }
 
-    /// Quick reactions and the reply action, as separate glass pills floating
-    /// clear of the tab bar. Never a single slab, and never glass on glass.
     private var replyBar: some View {
         GlassEffectContainer(spacing: 0) {
             HStack(spacing: 10) {
                 ForEach(["❤️", "😂", "👏"], id: \.self) { emoji in
                     Button(emoji) {
-                        if let hero {
-                            store.toggleReaction(emoji, messageID: hero.id, in: talkID)
+                        if let current {
+                            store.toggleReaction(emoji, messageID: current.id, in: talkID)
                         }
                     }
                     .font(.title3)
@@ -161,7 +149,7 @@ struct ThreadView: View {
 
                 Button {
                     // Recording a reply must not lose your place.
-                    saveCurrentProgress()
+                    saveProgress()
                     if player.isPlaying { player.togglePlay() }
                     showRecorder = true
                 } label: {
@@ -179,87 +167,55 @@ struct ThreadView: View {
     }
 }
 
-/// Pinned at the top of a thread with a backlog. Generated on device from the
-/// transcripts already sitting on the phone.
-struct CatchUpCard: View {
-    let talk: Talk
-    var playAll: () -> Void
-
-    private var minutes: Int { max(1, Int((talk.unreadDuration / 60).rounded())) }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("CATCH UP")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Palette.secondaryText)
-                Text("^[\(talk.unreadCount) new take](inflect: true), about ^[\(minutes) minute](inflect: true)")
-                    .font(.subheadline.weight(.semibold))
-                if let line = talk.messages.first(where: { !$0.watched })?.summaryLine {
-                    Text(line)
-                        .font(.caption)
-                        .foregroundStyle(Palette.secondaryText)
-                        .lineLimit(2)
-                }
-            }
-            Spacer(minLength: 4)
-            Button(action: playAll) {
-                Label("Play all", systemImage: "play.fill")
-                    .font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.glass)
-        }
-        .contentCard()
-    }
-}
-
-/// A watched or secondary message. Compact by design: the hero is where the
-/// video gets to be big.
-struct MessageRow: View {
+/// The transcript of the take being watched, and only that take. Tapping a
+/// line seeks the player to it.
+struct TranscriptPane: View {
     let message: Message
-    var open: () -> Void
+    @Bindable var player: ThreadPlayer
+
+    private var activeID: TranscriptSegment.ID? {
+        message.transcript.last { $0.start <= player.currentTime }?.id
+    }
 
     var body: some View {
-        Button(action: open) {
-            HStack(spacing: 12) {
-                TakeThumbnail(message: message, size: .large)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(message.author.name).font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(relativeLabel(message.sentAt))
-                            .font(.caption2)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if message.transcript.isEmpty {
+                        Label("Transcribing on device", systemImage: "waveform")
+                            .font(.footnote)
                             .foregroundStyle(Palette.secondaryText)
-                    }
-                    if let line = message.summaryLine {
-                        Text(line)
-                            .font(.caption)
-                            .foregroundStyle(Palette.secondaryText)
-                            .lineLimit(2)
-                    }
-                    HStack(spacing: 6) {
-                        Text("\(timecode(message.duration)) \(message.watched ? "watched" : "new")")
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(Palette.secondaryText)
-                        ForEach(message.reactions, id: \.self) { Text($0).font(.caption2) }
+                            .padding(.vertical, 12)
+                    } else {
+                        ForEach(message.transcript) { segment in
+                            Button { player.seek(to: segment.start) } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Text(timecode(segment.start))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(Palette.secondaryText)
+                                        .frame(width: 36, alignment: .leading)
+                                    Text(segment.text)
+                                        .font(.subheadline)
+                                        .multilineTextAlignment(.leading)
+                                        .foregroundStyle(
+                                            segment.id == activeID ? .white : .white.opacity(0.6)
+                                        )
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .id(segment.id)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
             }
-            .contentCard(padding: 12, radius: Scale.Radius.card)
-            .opacity(message.watched ? 0.72 : 1)
+            .frame(maxHeight: 190)
+            .background(Palette.raised)
+            .onChange(of: activeID) { _, id in
+                guard let id else { return }
+                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+            }
         }
-        .buttonStyle(.plain)
-    }
-}
-
-/// One take in the thread timeline, using the same thumbnail as everywhere
-/// else so the strip and the rows read as the same objects.
-struct TimelineChip: View {
-    let message: Message
-    let isPlaying: Bool
-
-    var body: some View {
-        TakeThumbnail(message: message, size: .small, isActive: isPlaying, showsDuration: false)
     }
 }
