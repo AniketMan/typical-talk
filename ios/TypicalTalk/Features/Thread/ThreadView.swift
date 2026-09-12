@@ -55,6 +55,8 @@ struct ThreadView: View {
                 .navigationTransition(.zoom(sourceID: "reply", in: replyMorph))
         }
         .task { showTranscript = store.alwaysShowCaptions }
+        // Transcribe this thread on device once it is actually opened.
+        .task(id: talkID) { await store.ensureTranscripts(in: talkID) }
         .onDisappear {
             saveCurrentProgress()
             player.teardown()

@@ -34,31 +34,13 @@ final class AppStore {
         notifications = []
     }
 
-    /// Loads the bundled conversations, then transcribes them on device so
-    /// search, chapters and captions work on seeded takes exactly as they do
-    /// on one you record.
+    /// Loads the bundled conversations. Transcription is deliberately not
+    /// done here: it runs on demand when a thread is opened, so a slow or
+    /// failing speech model cannot hold up or take down launch.
     func loadSeed() async {
         guard talks.isEmpty else { return }
         talks = await SampleData.talks()
         isLoadingSeed = false
-        await transcribeSeed()
-    }
-
-    private func transcribeSeed() async {
-        for talkIndex in talks.indices {
-            for messageIndex in talks[talkIndex].messages.indices {
-                let message = talks[talkIndex].messages[messageIndex]
-                guard message.transcript.isEmpty, let url = message.localVideoURL else { continue }
-                let segments = await Transcriber.segments(for: url)
-                guard !segments.isEmpty else { continue }
-                guard talkIndex < talks.count,
-                      messageIndex < talks[talkIndex].messages.count,
-                      talks[talkIndex].messages[messageIndex].id == message.id else { continue }
-                talks[talkIndex].messages[messageIndex].transcript = segments
-                talks[talkIndex].messages[messageIndex].chapters =
-                    Self.chapters(from: segments, duration: message.duration)
-            }
-        }
     }
 
     var unreadNotificationCount: Int { derivedNotifications.count }
@@ -86,8 +68,8 @@ final class AppStore {
     var derivedNotifications: [AppNotification] {
         var result: [AppNotification] = []
         for talk in talks {
-            for message in talk.messages {
-                if !message.reactions.isEmpty, message.author.isYou {
+            for message in talk.messages where message.author.isYou {
+                if !message.reactions.isEmpty {
                     result.append(AppNotification(
                         kind: .reaction,
                         text: "\(message.reactions.joined()) on your take",
@@ -95,7 +77,7 @@ final class AppStore {
                         at: message.sentAt
                     ))
                 }
-                if message.author.isYou, message.watched {
+                if message.watched {
                     result.append(AppNotification(
                         kind: .watchReceipt,
                         text: "Your take was watched",
@@ -111,6 +93,36 @@ final class AppStore {
     func talk(id: Talk.ID) -> Talk? { talks.first { $0.id == id } }
 
     func binding(for id: Talk.ID) -> Int? { talks.firstIndex { $0.id == id } }
+
+    private var transcribing: Set<Message.ID> = []
+
+    /// Transcribes one take on device, once. Safe to call repeatedly.
+    func ensureTranscript(for messageID: Message.ID, in talkID: Talk.ID) async {
+        guard let t = binding(for: talkID),
+              let m = talks[t].messages.firstIndex(where: { $0.id == messageID }),
+              talks[t].messages[m].transcript.isEmpty,
+              let url = talks[t].messages[m].localVideoURL,
+              transcribing.insert(messageID).inserted else { return }
+        defer { transcribing.remove(messageID) }
+
+        let duration = talks[t].messages[m].duration
+        let segments = await Transcriber.segments(for: url)
+        guard !segments.isEmpty else { return }
+
+        // The store may have changed while that ran, so find the take again.
+        guard let t2 = binding(for: talkID),
+              let m2 = talks[t2].messages.firstIndex(where: { $0.id == messageID }) else { return }
+        talks[t2].messages[m2].transcript = segments
+        talks[t2].messages[m2].chapters = Self.chapters(from: segments, duration: duration)
+    }
+
+    /// Transcribes a whole thread, newest first, one at a time.
+    func ensureTranscripts(in talkID: Talk.ID) async {
+        guard let t = binding(for: talkID) else { return }
+        for message in talks[t].messages {
+            await ensureTranscript(for: message.id, in: talkID)
+        }
+    }
 
     // MARK: - Resume
 
