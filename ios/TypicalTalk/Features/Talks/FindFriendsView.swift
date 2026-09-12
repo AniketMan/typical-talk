@@ -75,7 +75,7 @@ struct FindFriendsView: View {
 
             ForEach(suggestions) { person in
                 HStack(spacing: 12) {
-                    Monogram(text: initials(person.name), size: 38)
+                    Monogram(text: initials(person.name), size: Scale.Avatar.small)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(person.name).font(.subheadline.weight(.semibold))
                         Text("In your contacts")

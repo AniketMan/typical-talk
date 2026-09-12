@@ -220,19 +220,7 @@ struct MessageRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 12) {
-                ZStack {
-                    Monogram(text: message.author.initials, size: 54)
-                    Image(systemName: message.isVoiceOnly ? "waveform" : "play.fill")
-                        .font(.footnote)
-                        .foregroundStyle(.white)
-                }
-                .overlay(alignment: .topTrailing) {
-                    if message.watched {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption2)
-                            .foregroundStyle(Palette.presence)
-                    }
-                }
+                TakeThumbnail(message: message, size: .large)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
@@ -254,49 +242,20 @@ struct MessageRow: View {
                     }
                 }
             }
-            .contentCard(padding: 12, radius: 20)
+            .contentCard(padding: 12, radius: Scale.Radius.card)
             .opacity(message.watched ? 0.72 : 1)
         }
         .buttonStyle(.plain)
     }
 }
 
-/// One take in the thread timeline. Small, and honest about whether it has
-/// media on this device.
+/// One take in the thread timeline, using the same thumbnail as everywhere
+/// else so the strip and the rows read as the same objects.
 struct TimelineChip: View {
     let message: Message
     let isPlaying: Bool
-    @State private var poster: UIImage?
 
     var body: some View {
-        ZStack {
-            if let poster {
-                Image(uiImage: poster).resizable().scaledToFill()
-            } else {
-                Palette.raised.overlay {
-                    Image(systemName: message.isVoiceOnly ? "waveform" : "play.fill")
-                        .font(.caption2)
-                        .foregroundStyle(Palette.secondaryText)
-                }
-            }
-        }
-        .frame(width: 46, height: 46)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(isPlaying ? Palette.record : Palette.hairline,
-                              lineWidth: isPlaying ? 2 : 0.5)
-        )
-        .overlay(alignment: .topTrailing) {
-            if !message.watched && !message.author.isYou {
-                Circle().fill(Palette.record).frame(width: 7, height: 7).padding(3)
-            }
-        }
-        .task(id: message.id) {
-            if let url = message.localVideoURL {
-                poster = await VideoPoster.firstFrame(of: url)
-            }
-        }
-        .accessibilityLabel("\(message.author.name), \(timecode(message.duration))")
+        TakeThumbnail(message: message, size: .small, isActive: isPlaying, showsDuration: false)
     }
 }

@@ -44,9 +44,9 @@ struct HeroMessageCard: View {
             .containerRelativeFrame(.vertical) { height, _ in
                 min(max(height * 0.66, 380), 560)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Scale.Radius.hero, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                RoundedRectangle(cornerRadius: Scale.Radius.hero, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 0.5)
             )
 
@@ -111,7 +111,7 @@ struct HeroMessageCard: View {
     private var senderChip: some View {
         HStack {
             HStack(spacing: 9) {
-                Monogram(text: message.author.initials, size: 28)
+                Monogram(text: message.author.initials, size: Scale.Avatar.small)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(message.author.name).font(.caption.weight(.semibold))
                     Text(relativeLabel(message.sentAt))
@@ -143,7 +143,7 @@ struct HeroMessageCard: View {
                 controls
             }
             .padding(12)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Scale.Radius.card, style: .continuous))
         }
     }
 

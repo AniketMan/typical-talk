@@ -23,7 +23,7 @@ struct YouView: View {
             List {
                 Section {
                     HStack(spacing: 14) {
-                        Monogram(text: "Y", size: 62)
+                        Monogram(text: "Y", size: Scale.Avatar.profile)
                         VStack(alignment: .leading, spacing: 4) {
                             TextField("Your name", text: $displayName)
                                 .font(.headline)

@@ -113,10 +113,10 @@ struct RecorderSheet: View {
         .aspectRatio(camera.supportsDynamicFraming && camera.framing == .landscape ? 16 / 9 : 9 / 13, contentMode: .fit)
         .animation(.snappy(duration: 0.3), value: camera.framing)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Scale.Radius.hero, style: .continuous))
         .overlay(alignment: .top) { hud }
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: Scale.Radius.hero, style: .continuous)
                 .strokeBorder(Palette.hairline, lineWidth: 0.5)
         )
         // Hands-free: once you are rolling, a tap anywhere stops the take.
@@ -394,8 +394,8 @@ struct TakeChip: View {
                         }
                     }
                 }
-                .frame(width: 104, height: 62)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: Scale.Radius.thumbnail, style: .continuous))
 
                 HStack {
                     Text(timecode(take.duration))
@@ -409,9 +409,9 @@ struct TakeChip: View {
                 }
             }
             .padding(8)
-            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Palette.raised, in: RoundedRectangle(cornerRadius: Scale.Radius.control, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: Scale.Radius.control, style: .continuous)
                     .strokeBorder(isSelected ? .white.opacity(0.7) : Palette.hairline, lineWidth: isSelected ? 1.5 : 0.5)
             )
         }

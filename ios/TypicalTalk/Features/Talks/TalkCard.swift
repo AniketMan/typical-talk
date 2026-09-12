@@ -11,7 +11,7 @@ struct TalkCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Monogram(text: talk.initials, size: 44)
+            Monogram(text: talk.initials, size: Scale.Avatar.medium)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -46,43 +46,17 @@ struct TalkCard: View {
 
             thumbnail
         }
-        .contentCard(padding: 10, radius: 18)
+        .contentCard(padding: 10, radius: Scale.Radius.card)
     }
 
-    /// A small still of the newest take, only when there is one to show.
     @ViewBuilder
     private var thumbnail: some View {
         if let latest = talk.latest {
-            ZStack {
-                if let url = latest.localVideoURL {
-                    VideoPoster(url: url)
-                } else {
-                    Palette.canvas
-                }
-                Image(systemName: latest.isVoiceOnly ? "waveform" : "play.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .shadow(radius: 2)
-            }
-            .frame(width: 52, height: 52)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Palette.hairline, lineWidth: 0.5)
-            )
-            .overlay(alignment: .bottomTrailing) {
-                Text(timecode(latest.duration))
-                    .font(.system(size: 9).monospacedDigit())
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 1)
-                    .background(.black.opacity(0.65), in: .capsule)
-                    .padding(3)
-            }
+            TakeThumbnail(message: latest, size: .medium)
         }
     }
 }
 
-/// Initials disc. Stands in for a profile photo until the user sets one.
 struct Monogram: View {
     let text: String
     var size: CGFloat = 44

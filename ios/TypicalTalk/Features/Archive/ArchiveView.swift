@@ -117,7 +117,7 @@ struct ArchiveView: View {
             ForEach(store.bookmarks) { bookmark in
                 NavigationLink(value: bookmark.talkID) {
                     HStack(spacing: 12) {
-                        Monogram(text: bookmark.author.initials, size: 42)
+                        Monogram(text: bookmark.author.initials, size: Scale.Avatar.medium)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(bookmark.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                             Text("\(bookmark.author.name) at \(timecode(bookmark.at))")
@@ -129,7 +129,7 @@ struct ArchiveView: View {
                             .font(.caption2)
                             .foregroundStyle(Palette.secondaryText)
                     }
-                    .contentCard(padding: 12, radius: 18)
+                    .contentCard(padding: 12, radius: Scale.Radius.card)
                 }
                 .buttonStyle(.plain)
             }
@@ -161,7 +161,7 @@ struct MatchRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Monogram(text: match.message.author.initials, size: 34)
+                TakeThumbnail(message: match.message, size: .small, showsDuration: false)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(match.talk.title).font(.subheadline.weight(.semibold))
                     Text(match.message.author.name)
