@@ -101,35 +101,54 @@ struct ThreadView: View {
         }
     }
 
-    /// Every take in the thread, newest first. This is the only way to move
-    /// between takes, so it is always visible.
+    /// Every take in the thread, oldest on the left so the newest sits on the
+    /// right where the conversation has got to. Scrolls itself to whatever is
+    /// playing, so a long thread never opens scrolled into the past.
     private func timeline(_ talk: Talk) -> some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(talk.messages) { message in
-                    Button { select(message) } label: {
-                        VStack(spacing: 4) {
-                            TakeThumbnail(
-                                message: message,
-                                size: .small,
-                                isActive: message.id == current?.id,
-                                showsDuration: false
-                            )
-                            Text(message.author.isYou ? "You" : message.author.name)
-                                .font(.system(size: 10))
-                                .foregroundStyle(
-                                    message.id == current?.id ? .white : Palette.secondaryText
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(talk.messages.reversed()) { message in
+                        Button { select(message) } label: {
+                            VStack(spacing: 4) {
+                                TakeThumbnail(
+                                    message: message,
+                                    size: .small,
+                                    isActive: message.id == current?.id,
+                                    showsDuration: false
                                 )
-                                .lineLimit(1)
+                                Text(message.author.isYou ? "You" : message.author.name)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(
+                                        message.id == current?.id ? .white : Palette.secondaryText
+                                    )
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 54)
                         }
-                        .frame(width: 54)
+                        .buttonStyle(.plain)
+                        .id(message.id)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 16)
+                .scrollTargetLayout()
             }
-            .padding(.horizontal, 16)
+            .scrollIndicators(.hidden)
+            .onAppear { scroll(proxy, to: current?.id) }
+            .onChange(of: current?.id) { _, id in scroll(proxy, to: id, animated: true) }
+            .onChange(of: talk.messages.count) { _, _ in
+                scroll(proxy, to: talk.latest?.id, animated: true)
+            }
         }
-        .scrollIndicators(.hidden)
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to id: Message.ID?, animated: Bool = false) {
+        guard let id else { return }
+        if animated {
+            withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }
+        } else {
+            proxy.scrollTo(id, anchor: .center)
+        }
     }
 
     private var replyBar: some View {

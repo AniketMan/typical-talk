@@ -1,7 +1,13 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case talks, record, archive, you
+    case talks, archive, you
+}
+
+/// Wraps a thread id so the recorder can be presented with `sheet(item:)`,
+/// which guarantees the destination exists before the sheet is built.
+struct RecorderTarget: Identifiable {
+    let id: Talk.ID
 }
 
 /// The four locked tab items: Talks, Record, Archive, You. Archive takes the
@@ -24,52 +30,16 @@ struct RootView: View {
         return .talks
         #endif
     }
-    @State private var showRecorder = false
     @State private var archiveQuery = ""
     @State private var router = IntentRouter.shared
     @State private var path: [Talk.ID] = []
-    @State private var recorderTarget: Talk.ID?
+    @State private var recorderTarget: RecorderTarget?
     @Namespace private var recorderMorph
 
-    /// Tapping Record never changes the selected tab. It expands the tinted
-    /// action into the recorder, which is the point of the morph.
-    private var tabSelection: Binding<AppTab> {
-        Binding(
-            get: { selection },
-            set: { next in
-                if next == .record {
-                    showRecorder = true
-                } else {
-                    selection = next
-                }
-            }
-        )
-    }
-
-    /// An SF Symbol rendered once in the record tint and marked as original,
-    /// so the tab bar does not repaint it with the app tint.
-    private static let tintedRecordSymbol: UIImage = {
-        let tint = UIColor(red: 1.0, green: 0.325, blue: 0.435, alpha: 1.0)
-        guard let symbol = UIImage(systemName: "video.fill") else { return UIImage() }
-        return symbol.withTintColor(tint, renderingMode: .alwaysOriginal)
-    }()
-
     var body: some View {
-        TabView(selection: tabSelection) {
+        TabView(selection: $selection) {
             Tab("Talks", systemImage: "bubble.left.and.bubble.right", value: AppTab.talks) {
-                TalksView()
-            }
-
-            // The only tinted element in the app. The symbol is baked with
-            // the tint because tab labels ignore foregroundStyle.
-            Tab(value: AppTab.record) {
-                Color.clear
-            } label: {
-                Label {
-                    Text("Record")
-                } icon: {
-                    Image(uiImage: Self.tintedRecordSymbol)
-                }
+                TalksView { id in recorderTarget = RecorderTarget(id: id) }
             }
 
             Tab("You", systemImage: "person.crop.circle", value: AppTab.you) {
@@ -82,18 +52,8 @@ struct RootView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tint(.white)
-        // Anchors the zoom so the recorder grows out of the Record item
-        // instead of popping in from nowhere.
-        .overlay(alignment: .bottom) {
-            Color.clear
-                .frame(width: 64, height: 46)
-                .allowsHitTesting(false)
-                .padding(.bottom, 6)
-                .matchedTransitionSource(id: "recorder", in: recorderMorph)
-        }
-        .fullScreenCover(isPresented: $showRecorder) {
-            RecorderSheet(destination: recorderTarget)
-                .navigationTransition(.zoom(sourceID: "recorder", in: recorderMorph))
+        .fullScreenCover(item: $recorderTarget) { target in
+            RecorderSheet(destination: target.id)
         }
         .background(Palette.canvas)
         .task { await store.loadSeed() }
@@ -106,8 +66,7 @@ struct RootView: View {
         }
         .onChange(of: router.openRecorderFor) { _, target in
             guard let target else { return }
-            recorderTarget = target
-            showRecorder = true
+            recorderTarget = RecorderTarget(id: target)
             router.openRecorderFor = nil
         }
         .onChange(of: router.openTalkID) { _, id in

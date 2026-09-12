@@ -4,21 +4,17 @@ import SwiftUI
 /// The morphing recorder. One tap starts, one tap stops, the retake stack sits
 /// underneath, and sending is a separate deliberate action.
 struct RecorderSheet: View {
-    var destination: Talk.ID?
+    let destination: Talk.ID
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var camera = CameraController()
     @State private var showGuides = true
     @State private var handsFree = false
-    @State private var selectedTake: CameraController.Take?
-    @State private var target: Talk.ID?
+
     @State private var isSending = false
     @State private var countdown: Int?
 
-    private var targetTalk: Talk? {
-        guard let target else { return store.talks.first }
-        return store.talk(id: target)
-    }
+    private var targetTalk: Talk? { store.talk(id: destination) }
 
     var body: some View {
         NavigationStack {
@@ -28,8 +24,7 @@ struct RecorderSheet: View {
                     viewfinder
                     controlBar
                     recordButton
-                    if !camera.takes.isEmpty { takeStrip }
-                    sendRow
+
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
@@ -46,10 +41,7 @@ struct RecorderSheet: View {
                 }
             }
         }
-        .task {
-            target = destination ?? store.talks.first?.id
-            await camera.prepare()
-        }
+        .task { await camera.prepare() }
         .onDisappear { camera.stop() }
         .alert("Recording problem", isPresented: .constant(camera.failure != nil)) {
             Button("OK") { }
@@ -101,6 +93,14 @@ struct RecorderSheet: View {
 
             if showGuides && !camera.voiceOnly && !camera.cameraUnavailable && camera.authorization == .granted {
                 FramingGuides().transition(.opacity)
+            }
+
+            if isSending {
+                Color.black.opacity(0.45)
+                ProgressView("Sending")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+                    .font(.caption)
             }
 
             if let countdown {
@@ -232,9 +232,12 @@ struct RecorderSheet: View {
         .accessibilityLabel(camera.isRecording ? "Stop recording" : "Start recording")
     }
 
+    /// One tap starts, one tap stops, and stopping sends. There is no
+    /// separate send step and nothing to choose afterwards.
     private func tapRecord() async {
         if camera.isRecording {
-            _ = await camera.finishAndWait()
+            guard let take = await camera.finishAndWait() else { return }
+            await send(take)
             return
         }
         if handsFree {
@@ -249,103 +252,21 @@ struct RecorderSheet: View {
 
     // MARK: - Takes
 
-    private var takeStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Takes").font(.caption.weight(.semibold))
-                Spacer()
-                Text("^[\(camera.takes.count) recorded](inflect: true)")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.secondaryText)
-            }
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 10) {
-                    ForEach(camera.takes) { take in
-                        TakeChip(
-                            take: take,
-                            isSelected: (selectedTake ?? camera.takes.last) == take,
-                            select: { selectedTake = take },
-                            delete: {
-                                if selectedTake == take { selectedTake = nil }
-                                camera.delete(take)
-                            }
-                        )
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .scrollIndicators(.hidden)
-        }
-    }
-
-    /// Destination and send, together at the bottom where the thumb is.
-    private var sendRow: some View {
-        HStack(spacing: 10) {
-            Menu {
-                Picker("Thread", selection: $target) {
-                    ForEach(store.talks) { talk in
-                        Text(talk.title).tag(Optional(talk.id))
-                    }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.footnote)
-                    Text(targetTalk?.title ?? "Choose a thread")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(Palette.secondaryText)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
-            }
-            .glassEffect(.regular.interactive(), in: .capsule)
-
-            Button {
-                Task { await send() }
-            } label: {
-                Group {
-                    if isSending {
-                        ProgressView().tint(.white)
-                    } else {
-                        Label("Send", systemImage: "arrow.up")
-                            .font(.subheadline.weight(.semibold))
-                            .labelStyle(.titleAndIcon)
-                    }
-                }
-                .frame(minWidth: 92, minHeight: 50)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(
-                .regular.tint(camera.takes.isEmpty ? nil : Palette.record).interactive(),
-                in: .capsule
-            )
-            .disabled(camera.takes.isEmpty || isSending)
-            .opacity(camera.takes.isEmpty ? 0.5 : 1)
-            .animation(.snappy(duration: 0.25), value: camera.takes.isEmpty)
-        }
-    }
-
     // MARK: - Sending
 
-    private func send() async {
-        guard let take = selectedTake ?? camera.takes.last, let target else { return }
+    private func send(_ take: CameraController.Take) async {
         isSending = true
         defer { isSending = false }
-        // Transcribe before filing so the take is searchable the moment it lands.
+        // Transcribe before filing so the take is searchable the moment it
+        // lands in the thread.
         let transcript = await Transcriber.segments(for: take.url)
         store.send(
             take: take.url,
             duration: take.duration,
             transcript: transcript,
             voiceOnly: take.voiceOnly,
-            to: target
+            to: destination
         )
-        for other in camera.takes where other != take { camera.delete(other) }
         dismiss()
     }
 }

@@ -124,6 +124,14 @@ final class AppStore {
         }
     }
 
+    /// Creates an empty thread with someone, ready for its first take.
+    @discardableResult
+    func startTalk(with person: Person) -> Talk.ID {
+        let talk = Talk(title: person.name, members: [SampleData.you, person], messages: [])
+        talks.insert(talk, at: 0)
+        return talk.id
+    }
+
     // MARK: - Resume
 
     func resumePosition(for messageID: Message.ID) -> Double {
