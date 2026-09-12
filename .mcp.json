@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "devplatforms-docs": {
+      "type": "stdio",
+      "command": "/Users/aniketbhatt/Desktop/DevDatabase/Untitled/development-platforms/mcp-server/.venv/bin/python",
+      "args": [
+        "/Users/aniketbhatt/Desktop/DevDatabase/Untitled/development-platforms/mcp-server/server.py"
+      ],
+      "env": {
+        "DEVPLATFORMS_ROOT": "/Users/aniketbhatt/Desktop/DevDatabase/Untitled/development-platforms"
+      }
+    }
+  }
+}
