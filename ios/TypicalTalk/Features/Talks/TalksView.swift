@@ -94,6 +94,14 @@ struct TalksView: View {
                     .matchedTransitionSource(id: "notifications", in: morph)
                 }
             }
+            #if DEBUG
+            // Debug only: open Find Friends at launch for screenshot checks.
+            .task {
+                if ProcessInfo.processInfo.arguments.contains("sheet:friends") {
+                    showFindFriends = true
+                }
+            }
+            #endif
             .onChange(of: navigation.open) { _, id in
                 guard let id else { return }
                 path = [id]

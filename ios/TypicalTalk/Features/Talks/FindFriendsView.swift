@@ -55,8 +55,13 @@ struct FindFriendsView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)
+            // The app tint is white, and a prominent button fills itself with
+            // the tint, which put white text on a white fill.
+            .tint(Palette.record)
             .controlSize(.extraLarge)
-            .disabled(store.contactsSynced || isSyncing)
+            // Once access is refused the button cannot do anything, so it
+            // should not stand there looking like the next step.
+            .disabled(store.contactsSynced || isSyncing || accessDenied)
 
             ShareLink(item: inviteText) {
                 Label("Share an invite", systemImage: "square.and.arrow.up")
