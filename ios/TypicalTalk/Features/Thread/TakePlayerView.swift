@@ -9,6 +9,7 @@ struct TakePlayerView: View {
     let talkID: Talk.ID
     @Bindable var player: ThreadPlayer
     @Binding var autoplayOnLoad: Bool
+    @Binding var showTranscript: Bool
     @Environment(AppStore.self) private var store
 
     /// A brief glyph after a tap, so the tap is acknowledged without leaving
@@ -92,15 +93,14 @@ struct TakePlayerView: View {
                 ))
 
                 Button {
-                    store.addBookmark(at: player.currentTime, messageID: message.id, in: talkID)
+                    withAnimation(.snappy(duration: 0.28)) { showTranscript.toggle() }
                 } label: {
-                    Image(systemName: message.bookmarkedAt.isEmpty ? "bookmark" : "bookmark.fill")
+                    Image(systemName: showTranscript ? "captions.bubble.fill" : "captions.bubble")
                         .font(.footnote.weight(.semibold))
                         .frame(width: 38, height: 38)
                 }
                 .buttonStyle(.glass)
-                .disabled(!player.hasMedia)
-                .accessibilityLabel("Bookmark this moment")
+                .accessibilityLabel(showTranscript ? "Hide transcript" : "Show transcript")
             }
         }
         .padding(.horizontal, 16)

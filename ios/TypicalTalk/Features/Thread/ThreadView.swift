@@ -32,7 +32,8 @@ struct ThreadView: View {
                         message: current,
                         talkID: talkID,
                         player: player,
-                        autoplayOnLoad: $autoplayOnLoad
+                        autoplayOnLoad: $autoplayOnLoad,
+                        showTranscript: $showTranscript
                     )
 
                     if showTranscript {
@@ -49,28 +50,29 @@ struct ThreadView: View {
         .navigationTitle(talk?.title ?? "Talk")
         .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    withAnimation(.snappy(duration: 0.28)) { showTranscript.toggle() }
-                } label: {
-                    Label("Transcript", systemImage: showTranscript ? "captions.bubble.fill" : "captions.bubble")
-                }
-            }
-        }
         .fullScreenCover(isPresented: $showRecorder) {
             RecorderSheet(destination: talkID)
                 .navigationTransition(.zoom(sourceID: "reply", in: replyMorph))
         }
         .task { showTranscript = store.alwaysShowCaptions }
+        .onAppear { ThreadContext.shared.openTalk = talkID }
+        .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
         .task(id: talkID) { await store.ensureTranscripts(in: talkID) }
         .onDisappear {
             saveProgress()
             player.teardown()
+            if ThreadContext.shared.openTalk == talkID { ThreadContext.shared.openTalk = nil }
         }
     }
 
     // MARK: - Switching takes
+
+    /// Pauses, saves your place, and opens the recorder.
+    private func beginReply() {
+        saveProgress()
+        if player.isPlaying { player.togglePlay() }
+        showRecorder = true
+    }
 
     /// Stores where the current take got to, before the player is reused.
     private func saveProgress() {
@@ -94,14 +96,8 @@ struct ThreadView: View {
 
     // MARK: - Bottom bar
 
-    /// One row: the takes on the left, the reply action pinned on the right.
     private func bottomBar(_ talk: Talk) -> some View {
-        HStack(spacing: 12) {
-            timeline(talk)
-            replyButton
-        }
-        .padding(.trailing, 16)
-        .padding(.bottom, 6)
+        timeline(talk).padding(.bottom, 6)
     }
 
     /// Every take in the thread, oldest on the left so the newest sits on the
@@ -155,29 +151,6 @@ struct ThreadView: View {
         }
     }
 
-    private var replyButton: some View {
-        Button {
-            // Recording a reply must not lose your place.
-            saveProgress()
-            if player.isPlaying { player.togglePlay() }
-            showRecorder = true
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "video.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
-                    .background(Palette.record, in: .circle)
-                Text("Reply")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 54)
-        }
-        .buttonStyle(.plain)
-        .matchedTransitionSource(id: "reply", in: replyMorph)
-        .accessibilityLabel("Record a reply")
-    }
 }
 
 /// The transcript of the take being watched, and only that take. Tapping a

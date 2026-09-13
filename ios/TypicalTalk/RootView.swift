@@ -32,6 +32,7 @@ struct RootView: View {
     }
     @State private var archiveQuery = ""
     @State private var router = IntentRouter.shared
+    @State private var thread = ThreadContext.shared
     @State private var path: [Talk.ID] = []
     @State private var recorderTarget: RecorderTarget?
     @Namespace private var recorderMorph
@@ -52,6 +53,28 @@ struct RootView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tint(.white)
+        // The reply action lives beside the tab bar, appearing only while a
+        // thread is open. Three tabs leave room for it on the trailing side.
+        .overlay(alignment: .bottomTrailing) {
+            if thread.openTalk != nil {
+                Button {
+                    ThreadContext.shared.requestReply()
+                } label: {
+                    Image(systemName: "video.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 54, height: 54)
+                        .background(Palette.record, in: .circle)
+                        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 16)
+                .padding(.bottom, 6)
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+                .accessibilityLabel("Record a reply")
+            }
+        }
+        .animation(.snappy(duration: 0.3), value: thread.openTalk)
         .fullScreenCover(item: $recorderTarget) { target in
             RecorderSheet(destination: target.id)
         }
