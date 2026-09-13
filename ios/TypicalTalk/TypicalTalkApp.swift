@@ -11,7 +11,7 @@ struct TypicalTalkApp: App {
                 // Intents run outside the view tree and need the store.
                 .task { IntentBridge.store = store }
                 .preferredColorScheme(.dark)
-                .tint(.white)
+                .tint(Palette.record)
         }
     }
 }

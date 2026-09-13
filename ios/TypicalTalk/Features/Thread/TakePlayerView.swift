@@ -208,7 +208,6 @@ struct SpeedSlider: View {
             }
         }
         .pickerStyle(.segmented)
-        .tint(Palette.record)
     }
 }
 

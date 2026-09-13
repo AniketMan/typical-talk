@@ -98,7 +98,7 @@ struct RecorderSheet: View {
             if isSending {
                 Color.black.opacity(0.45)
                 ProgressView("Sending")
-                    .tint(.white)
+                    .tint(Palette.record)
                     .foregroundStyle(.white)
                     .font(.caption)
             }

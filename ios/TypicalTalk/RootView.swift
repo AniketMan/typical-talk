@@ -97,7 +97,7 @@ struct RootView: View {
                 Color.clear
             }
         }
-        .tint(.white)
+        .tint(Palette.record)
         .fullScreenCover(item: $recorderTarget) { target in
             RecorderSheet(destination: target.id)
         }
