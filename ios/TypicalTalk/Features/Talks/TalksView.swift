@@ -5,8 +5,6 @@ struct TalksView: View {
     @State private var filter: Filter = .all
     @State private var showNotifications = false
     @State private var showFindFriends = false
-    @State private var showNewTalk = false
-    var startRecording: (Talk.ID) -> Void = { _ in }
     @State private var navigation = TalksNavigation.shared
     @State private var path: [Talk.ID] = []
     @Namespace private var morph
@@ -61,14 +59,6 @@ struct TalksView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showNewTalk = true
-                    } label: {
-                        Label("New Talk", systemImage: "plus")
-                    }
-                    .labelStyle(.iconOnly)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
                         showFindFriends = true
                     } label: {
                         Label("Find Friends", systemImage: "person.badge.plus")
@@ -105,10 +95,6 @@ struct TalksView: View {
                 guard let id else { return }
                 path = [id]
                 navigation.open = nil
-            }
-            .sheet(isPresented: $showNewTalk) {
-                NewTalkView { id in startRecording(id) }
-                    .presentationBackground(Palette.canvas)
             }
             .sheet(isPresented: $showFindFriends) {
                 // Its own stack: binding the Talks path here made the sheet and

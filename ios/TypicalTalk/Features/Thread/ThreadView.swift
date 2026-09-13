@@ -41,34 +41,25 @@ struct ThreadView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
-                    bottomBar(talk).padding(.top, 8)
                 }
-                // Pushed screens do not inherit the tab bar's inset, so the
-                // strip reserves the bar's height itself.
-                .padding(.bottom, AppTabBar.height + 12)
+                // Above the system tab bar, inside this screen, so the strip
+                // and the reply button slide away with the thread.
+                .safeAreaBar(edge: .bottom, spacing: 8) { bottomBar(talk) }
             } else {
                 ContentUnavailableView("Talk not found", systemImage: "questionmark.circle")
             }
         }
         .background(Palette.canvas)
-        // Belongs to this screen and sits exactly in the tab bar's row, so it
-        // slides off with the thread as you swipe back instead of vanishing
-        // once the swipe has finished.
-        .overlay(alignment: .bottomTrailing) {
-            ReplyBarButton { beginReply() }
-                .matchedTransitionSource(id: "reply", in: replyMorph)
-                .padding(.trailing, AppTabBar.horizontalPadding)
-                .padding(.bottom, AppTabBar.bottomPadding)
-        }
         .navigationTitle(talk?.title ?? "Talk")
         .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $showRecorder) {
             RecorderSheet(destination: talkID)
-                .navigationTransition(.zoom(sourceID: "reply", in: replyMorph))
         }
         .task { showTranscript = store.alwaysShowCaptions }
         .onAppear { ThreadContext.shared.openTalk = talkID }
+        // The tab bar's circle becomes Reply while this thread is open.
+        .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
         .task(id: talkID) { await store.ensureTranscripts(in: talkID) }
         .onDisappear {
             saveProgress()
@@ -217,3 +208,4 @@ struct TranscriptPane: View {
         }
     }
 }
+

@@ -2,6 +2,10 @@ import SwiftUI
 
 enum AppTab: Hashable {
     case talks, archive, you
+    /// The detached circle at the end of the tab bar. It is never a
+    /// destination: selecting it performs an action and the selection stays
+    /// where it was.
+    case action
 }
 
 /// Wraps a thread id so the recorder can be presented with `sheet(item:)`,
@@ -10,16 +14,50 @@ struct RecorderTarget: Identifiable {
     let id: Talk.ID
 }
 
-/// Three tabs: Talks, You, Archive. The system tab bar is hidden and replaced
-/// by AppTabBar, so the reply action can sit in the same row as the tabs
-/// while a thread is open.
+/// Three tabs on the system tab bar, Talks, You and Archive, plus a detached
+/// circle at the trailing end, the way Music shows search.
+///
+/// This is Apple's real TabView, not a replica, so press-and-slide selection
+/// and the swipe back behave exactly as the system does. The circle never
+/// disappears, which the HIG asks of tab bar items; instead it changes job:
+/// on Talks it starts a new talk, and inside a thread it records a reply.
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @State private var selection: AppTab = Self.initialTab
     @State private var archiveQuery = ""
     @State private var router = IntentRouter.shared
-    @State private var thread = ThreadContext.shared
     @State private var recorderTarget: RecorderTarget?
+    @State private var thread = ThreadContext.shared
+    @State private var showNewTalk = false
+
+    private var inThread: Bool { thread.openTalk != nil }
+
+    /// Selecting the circle runs its action instead of switching tabs.
+    private var tabSelection: Binding<AppTab> {
+        Binding(
+            get: { selection },
+            set: { next in
+                guard next == .action else {
+                    selection = next
+                    return
+                }
+                if inThread {
+                    ThreadContext.shared.requestReply()
+                } else {
+                    showNewTalk = true
+                }
+            }
+        )
+    }
+
+    /// Red symbols baked as original images, because tab labels ignore
+    /// foregroundStyle and would otherwise repaint them with the app tint.
+    private static func redSymbol(_ name: String) -> UIImage {
+        let tint = UIColor(red: 1.0, green: 0.325, blue: 0.435, alpha: 1.0)
+        let config = UIImage.SymbolConfiguration(weight: .semibold)
+        guard let symbol = UIImage(systemName: name, withConfiguration: config) else { return UIImage() }
+        return symbol.withTintColor(tint, renderingMode: .alwaysOriginal)
+    }
 
     /// Lets a debug build launch straight into a tab, for screenshot checks.
     private static var initialTab: AppTab {
@@ -35,32 +73,44 @@ struct RootView: View {
     }
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: tabSelection) {
             Tab("Talks", systemImage: "bubble.left.and.bubble.right", value: AppTab.talks) {
-                TalksView { id in recorderTarget = RecorderTarget(id: id) }
-                    .modifier(tabBar)
+                TalksView()
             }
 
             Tab("You", systemImage: "person.crop.circle", value: AppTab.you) {
                 YouView()
-                    .modifier(tabBar)
             }
 
             Tab("Archive", systemImage: "magnifyingglass", value: AppTab.archive) {
                 ArchiveView(query: $archiveQuery)
-                    .modifier(tabBar)
+            }
+
+            // The search role is the system's only detached trailing circle.
+            Tab(value: AppTab.action, role: .search) {
+                Color.clear
+            } label: {
+                Label {
+                    Text(inThread ? "Reply" : "New Talk")
+                } icon: {
+                    Image(uiImage: Self.redSymbol(inThread ? "video.fill" : "plus"))
+                }
             }
         }
         .tint(.white)
         .fullScreenCover(item: $recorderTarget) { target in
             RecorderSheet(destination: target.id)
         }
+        .sheet(isPresented: $showNewTalk) {
+            NewTalkView { id in recorderTarget = RecorderTarget(id: id) }
+                .presentationBackground(Palette.canvas)
+        }
         .background(Palette.canvas)
         .task {
             await store.loadSeed()
             #if DEBUG
-            // Debug only: launch straight into the newest thread so the bar can
-            // be checked with the reply action showing.
+            // Debug only: launch straight into the newest thread for
+            // screenshot checks.
             if ProcessInfo.processInfo.arguments.contains("thread:first"),
                let first = store.talks.first {
                 TalksNavigation.shared.open = first.id
@@ -85,26 +135,5 @@ struct RootView: View {
             TalksNavigation.shared.open = id
             router.openTalkID = nil
         }
-    }
-
-    /// Applied to each tab's root, outside its NavigationStack, so pushed
-    /// screens such as a thread inherit the bottom inset and stack their own
-    /// bars above this one instead of underneath it.
-    private var tabBar: AppTabBarModifier {
-        AppTabBarModifier(selection: $selection, reservesReply: thread.openTalk != nil)
-    }
-}
-
-struct AppTabBarModifier: ViewModifier {
-    @Binding var selection: AppTab
-    var reservesReply: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .toolbarVisibility(.hidden, for: .tabBar)
-            .safeAreaBar(edge: .bottom) {
-                AppTabBar(selection: $selection, reservesReply: reservesReply)
-                    .padding(.bottom, AppTabBar.bottomPadding)
-            }
     }
 }

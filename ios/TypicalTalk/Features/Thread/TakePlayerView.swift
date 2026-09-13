@@ -191,31 +191,24 @@ struct TakePlayerView: View {
     }
 }
 
-/// 0.75x to 2x. Slide across it like the tab bar, or tap a speed. 1x is the
-/// neutral value.
+/// 0.75x to 2x on the system segmented control, so sliding across it behaves
+/// exactly like every other segmented control. 1x is the neutral value.
 struct SpeedSlider: View {
     @Binding var rate: Double
     private let steps: [Double] = [0.75, 1.0, 1.5, 2.0]
 
     var body: some View {
-        GlassSegmentPicker(
-            items: steps,
-            selection: Binding(
-                get: { steps.min { abs($0 - rate) < abs($1 - rate) } ?? 1 },
-                set: { rate = $0 }
-            ),
-            highlight: AnyShapeStyle(Palette.record),
-            inset: 3
-        ) { step, isSelected in
-            Text(step == 1 ? "1x" : "\(step.formatted(.number.precision(.fractionLength(0...2))))x")
-                .font(.caption2.weight(.semibold).monospacedDigit())
-                .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
-                .lineLimit(1)
+        Picker("Playback speed", selection: Binding(
+            get: { steps.min { abs($0 - rate) < abs($1 - rate) } ?? 1 },
+            set: { rate = $0 }
+        )) {
+            ForEach(steps, id: \.self) { step in
+                Text(step == 1 ? "1x" : "\(step.formatted(.number.precision(.fractionLength(0...2))))x")
+                    .tag(step)
+            }
         }
-        .frame(height: 38)
-        .background(.white.opacity(0.1), in: .capsule)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Playback speed")
+        .pickerStyle(.segmented)
+        .tint(Palette.record)
     }
 }
 
