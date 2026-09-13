@@ -1,8 +1,9 @@
 import Contacts
 import SwiftUI
 
-/// Find friends lives inside Talks, never as a tab. It matches real device
-/// contacts and falls back to an honest empty state when access is refused.
+/// The Friends tab: the people you already talk to, then matching device
+/// contacts and invites. Falls back to an honest empty state when contact
+/// access is refused.
 struct FindFriendsView: View {
     @Environment(AppStore.self) private var store
     @State private var suggestions: [Suggestion] = []
@@ -21,6 +22,7 @@ struct FindFriendsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 hero
+                if !knownPeople.isEmpty { knownPeopleList }
                 actions
                 if accessDenied {
                     deniedNotice
@@ -36,10 +38,34 @@ struct FindFriendsView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
     }
 
+    /// Everyone you already have a talk with.
+    private var knownPeople: [Person] {
+        var seen = Set<UUID>()
+        return store.talks.flatMap(\.members).filter { person in
+            !person.isYou && seen.insert(person.id).inserted
+        }
+        .sorted { $0.name < $1.name }
+    }
+
+    private var knownPeopleList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("On Typical Talk")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Palette.secondaryText)
+
+            ForEach(knownPeople) { person in
+                HStack(spacing: 12) {
+                    Monogram(text: person.initials, size: Scale.Avatar.small)
+                    Text(person.name).font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                .contentCard(padding: 12, radius: 18)
+            }
+        }
+    }
+
     private var hero: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Find your people")
-                .font(.largeTitle.weight(.bold))
             Text("Match contacts who already use Typical Talk, then invite anyone else you want here.")
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondaryText)

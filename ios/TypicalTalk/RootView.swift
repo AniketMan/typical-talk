@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case talks, archive, you
+    case talks, friends, archive, you
     /// The detached circle at the end of the tab bar. It is never a
     /// destination: selecting it performs an action and the selection stays
     /// where it was.
@@ -65,6 +65,7 @@ struct RootView: View {
         switch ProcessInfo.processInfo.arguments.last(where: { $0.hasPrefix("tab:") }) {
         case "tab:archive": return .archive
         case "tab:you": return .you
+        case "tab:friends": return .friends
         default: return .talks
         }
         #else
@@ -76,6 +77,14 @@ struct RootView: View {
         TabView(selection: tabSelection) {
             Tab("Talks", systemImage: "bubble.left.and.bubble.right", value: AppTab.talks) {
                 TalksView()
+            }
+
+            Tab("Friends", systemImage: "person.2", value: AppTab.friends) {
+                NavigationStack {
+                    FindFriendsView()
+                        .navigationTitle("Friends")
+                        .background(Palette.canvas)
+                }
             }
 
             Tab("You", systemImage: "person.crop.circle", value: AppTab.you) {

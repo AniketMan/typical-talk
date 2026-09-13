@@ -12,7 +12,7 @@ final class AppStore {
     var notifications: [AppNotification]
 
     // Preferences surfaced in the You tab.
-    var alwaysShowCaptions = true
+    var alwaysShowCaptions = false
     var autoplayNewTakes = false
     var notificationsEnabled = true
 

@@ -4,7 +4,6 @@ struct TalksView: View {
     @Environment(AppStore.self) private var store
     @State private var filter: Filter = .all
     @State private var showNotifications = false
-    @State private var showFindFriends = false
     @State private var navigation = TalksNavigation.shared
     @State private var path: [Talk.ID] = []
     @Namespace private var morph
@@ -59,15 +58,6 @@ struct TalksView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showFindFriends = true
-                    } label: {
-                        Label("Find Friends", systemImage: "person.badge.plus")
-                    }
-                    .labelStyle(.iconOnly)
-                    .matchedTransitionSource(id: "friends", in: morph)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
                         showNotifications = true
                     } label: {
                         Label("Notifications", systemImage: "bell")
@@ -83,38 +73,10 @@ struct TalksView: View {
                     }
                 }
             }
-            #if DEBUG
-            // Debug only: open Find Friends at launch for screenshot checks.
-            .task {
-                if ProcessInfo.processInfo.arguments.contains("sheet:friends") {
-                    showFindFriends = true
-                }
-            }
-            #endif
             .onChange(of: navigation.open) { _, id in
                 guard let id else { return }
                 path = [id]
                 navigation.open = nil
-            }
-            .sheet(isPresented: $showFindFriends) {
-                // Its own stack: binding the Talks path here made the sheet and
-                // the tab share navigation state.
-                NavigationStack {
-                    FindFriendsView()
-                        .navigationTitle("Find Friends")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .background(Palette.canvas)
-                        .toolbar {
-                            // There was no way out of this sheet. The zoom
-                            // transition makes swipe-down unreliable, so it
-                            // needs an explicit close.
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button(role: .close) { showFindFriends = false }
-                            }
-                        }
-                }
-                .navigationTransition(.zoom(sourceID: "friends", in: morph))
-                .presentationBackground(Palette.canvas)
             }
             .sheet(isPresented: $showNotifications) {
                 // A plain slide up. Zooming from the bell all the way down to a

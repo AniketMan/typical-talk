@@ -65,8 +65,10 @@ struct TakePlayerView: View {
     private var media: some View {
         if let avPlayer = player.player {
             // Aspect fit, so the take is always shown at its real shape.
-            VideoPlayer(player: avPlayer)
-                .disabled(true)
+            PlayerSurface(player: avPlayer)
+                .opacity(player.isSettled ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: player.isSettled)
+                .allowsHitTesting(false)
         } else if message.isVoiceOnly {
             WaveformPlaceholder()
         } else {
@@ -95,11 +97,22 @@ struct TakePlayerView: View {
                 Button {
                     withAnimation(.snappy(duration: 0.28)) { showTranscript.toggle() }
                 } label: {
-                    Image(systemName: showTranscript ? "captions.bubble.fill" : "captions.bubble")
+                    // On: the whole button fills red and the icon turns white,
+                    // rather than only the tiny symbol filling in.
+                    Image(systemName: "captions.bubble")
                         .font(.footnote.weight(.semibold))
+                        .foregroundStyle(showTranscript ? .white : Palette.record)
                         .frame(width: 38, height: 38)
+                        .background {
+                            if showTranscript {
+                                Circle().fill(Palette.record)
+                            }
+                        }
+                        .contentShape(.circle)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.plain)
+                .glassEffect(showTranscript ? .identity : .regular.interactive(), in: .circle)
+                .animation(.snappy(duration: 0.2), value: showTranscript)
                 .accessibilityLabel(showTranscript ? "Hide transcript" : "Show transcript")
             }
         }
@@ -126,37 +139,22 @@ struct TakePlayerView: View {
                     .foregroundStyle(Palette.secondaryText)
             }
 
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let progress = length > 0 ? min(1, player.currentTime / length) : 0
-
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.2))
-                    Capsule().fill(Palette.record).frame(width: width * progress)
-
-                    ForEach(message.chapters.dropFirst()) { chapter in
-                        Capsule()
-                            .fill(Palette.canvas.opacity(0.7))
-                            .frame(width: 2)
-                            .offset(x: width * (length > 0 ? chapter.start / length : 0))
+            // The system slider: a Liquid Glass knob that lifts as you drag
+            // it, sized for a thumb, with chapters as tick marks.
+            Slider(
+                value: Binding(
+                    get: { min(player.currentTime, max(length, 0.01)) },
+                    set: { player.seek(to: $0) }
+                ),
+                in: 0...max(length, 0.01),
+                label: { Text("Position") },
+                ticks: {
+                    SliderTickContentForEach(message.chapters.dropFirst().map(\.start), id: \.self) { start in
+                        SliderTick(start)
                     }
-
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 14, height: 14)
-                        .shadow(radius: 2)
-                        .offset(x: max(0, width * progress - 7))
                 }
-                .contentShape(.rect)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard player.hasMedia, width > 0 else { return }
-                            player.seek(to: length * Double(max(0, min(1, value.location.x / width))))
-                        }
-                )
-            }
-            .frame(height: 16)
+            )
+            .disabled(!player.hasMedia)
         }
     }
 
