@@ -112,11 +112,21 @@ struct TalksView: View {
                     .presentationBackground(Palette.canvas)
             }
             .sheet(isPresented: $showFindFriends) {
-                NavigationStack(path: $path) {
+                // Its own stack: binding the Talks path here made the sheet and
+                // the tab share navigation state.
+                NavigationStack {
                     FindFriendsView()
                         .navigationTitle("Find Friends")
                         .navigationBarTitleDisplayMode(.inline)
                         .background(Palette.canvas)
+                        .toolbar {
+                            // There was no way out of this sheet. The zoom
+                            // transition makes swipe-down unreliable, so it
+                            // needs an explicit close.
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button(role: .close) { showFindFriends = false }
+                            }
+                        }
                 }
                 .navigationTransition(.zoom(sourceID: "friends", in: morph))
                 .presentationBackground(Palette.canvas)
