@@ -91,25 +91,20 @@ struct RootView: View {
     /// screens such as a thread inherit the bottom inset and stack their own
     /// bars above this one instead of underneath it.
     private var tabBar: AppTabBarModifier {
-        AppTabBarModifier(
-            selection: $selection,
-            showsReply: thread.openTalk != nil,
-            reply: { ThreadContext.shared.requestReply() }
-        )
+        AppTabBarModifier(selection: $selection, reservesReply: thread.openTalk != nil)
     }
 }
 
 struct AppTabBarModifier: ViewModifier {
     @Binding var selection: AppTab
-    var showsReply: Bool
-    var reply: () -> Void
+    var reservesReply: Bool
 
     func body(content: Content) -> some View {
         content
             .toolbarVisibility(.hidden, for: .tabBar)
             .safeAreaBar(edge: .bottom) {
-                AppTabBar(selection: $selection, showsReply: showsReply, reply: reply)
-                    .padding(.bottom, 4)
+                AppTabBar(selection: $selection, reservesReply: reservesReply)
+                    .padding(.bottom, AppTabBar.bottomPadding)
             }
     }
 }

@@ -191,36 +191,31 @@ struct TakePlayerView: View {
     }
 }
 
-/// 0.75x to 2x with detents. 1x is the neutral value.
+/// 0.75x to 2x. Slide across it like the tab bar, or tap a speed. 1x is the
+/// neutral value.
 struct SpeedSlider: View {
     @Binding var rate: Double
     private let steps: [Double] = [0.75, 1.0, 1.5, 2.0]
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(steps, id: \.self) { step in
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { rate = step }
-                } label: {
-                    Text(step == 1.0 ? "1x" : "\(step.formatted(.number.precision(.fractionLength(0...2))))x")
-                        .font(.caption2.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(abs(rate - step) < 0.01 ? .white : .white.opacity(0.72))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background {
-                            if abs(rate - step) < 0.01 { Capsule().fill(Palette.record) }
-                        }
-                }
-                .buttonStyle(.plain)
-            }
+        GlassSegmentPicker(
+            items: steps,
+            selection: Binding(
+                get: { steps.min { abs($0 - rate) < abs($1 - rate) } ?? 1 },
+                set: { rate = $0 }
+            ),
+            highlight: AnyShapeStyle(Palette.record),
+            inset: 3
+        ) { step, isSelected in
+            Text(step == 1 ? "1x" : "\(step.formatted(.number.precision(.fractionLength(0...2))))x")
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
+                .lineLimit(1)
         }
-        .padding(3)
-        .frame(maxWidth: .infinity)
+        .frame(height: 38)
         .background(.white.opacity(0.1), in: .capsule)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Playback speed")
-        .accessibilityValue("\(rate.formatted())x")
     }
 }
 

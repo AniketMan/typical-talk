@@ -51,6 +51,15 @@ struct ThreadView: View {
             }
         }
         .background(Palette.canvas)
+        // Belongs to this screen and sits exactly in the tab bar's row, so it
+        // slides off with the thread as you swipe back instead of vanishing
+        // once the swipe has finished.
+        .overlay(alignment: .bottomTrailing) {
+            ReplyBarButton { beginReply() }
+                .matchedTransitionSource(id: "reply", in: replyMorph)
+                .padding(.trailing, AppTabBar.horizontalPadding)
+                .padding(.bottom, AppTabBar.bottomPadding)
+        }
         .navigationTitle(talk?.title ?? "Talk")
         .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
@@ -60,7 +69,6 @@ struct ThreadView: View {
         }
         .task { showTranscript = store.alwaysShowCaptions }
         .onAppear { ThreadContext.shared.openTalk = talkID }
-        .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
         .task(id: talkID) { await store.ensureTranscripts(in: talkID) }
         .onDisappear {
             saveProgress()

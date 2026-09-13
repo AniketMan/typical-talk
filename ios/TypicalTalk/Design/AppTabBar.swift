@@ -1,81 +1,79 @@
 import SwiftUI
 
-/// The app's bottom bar: the three tabs and, while a thread is open, the reply
-/// action, laid out in one row so they always share a baseline and a height.
+/// The app's bottom bar: the three tabs, with a draggable highlight like the
+/// system tab bar.
 ///
-/// This replaces the system tab bar. The reply button used to be a separate
-/// overlay positioned by guesswork next to the system bar, which the system
-/// bar knew nothing about, so the two never lined up. Here they are siblings
-/// in the same stack, and the tabs give up width when the reply appears.
+/// While a thread is open the tabs give up a slot at the trailing end. The
+/// reply button in that slot is drawn by the thread itself, not by this bar,
+/// so it slides away with the thread as you swipe back rather than vanishing
+/// only after the swipe has finished.
 struct AppTabBar: View {
     @Binding var selection: AppTab
-    var showsReply: Bool
-    var reply: () -> Void
+    var reservesReply: Bool
 
     static let height: CGFloat = 62
+    static let spacing: CGFloat = 10
+    static let horizontalPadding: CGFloat = 16
+    static let bottomPadding: CGFloat = 4
 
-    private let items: [(tab: AppTab, title: String, symbol: String)] = [
-        (.talks, "Talks", "bubble.left.and.bubble.right"),
-        (.you, "You", "person.crop.circle"),
-        (.archive, "Archive", "magnifyingglass")
-    ]
+    private let tabs: [AppTab] = [.talks, .you, .archive]
 
     var body: some View {
-        // Spacing 0: the pill and the reply button share a sampling region
-        // but must never blend into each other.
-        GlassEffectContainer(spacing: 0) {
-            HStack(spacing: 10) {
-                tabs
-
-                if showsReply {
-                    Button(action: reply) {
-                        Image(systemName: "video.fill")
-                            .font(.system(size: 19, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: Self.height, height: Self.height)
-                            .background(Palette.record, in: .circle)
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
-                    .accessibilityLabel("Record a reply")
+        HStack(spacing: Self.spacing) {
+            GlassSegmentPicker(items: tabs, selection: $selection, inset: 5) { tab, isSelected in
+                VStack(spacing: 3) {
+                    Image(systemName: symbol(for: tab))
+                        .font(.system(size: 20, weight: .medium))
+                    Text(title(for: tab))
+                        .font(.system(size: 11, weight: .semibold))
                 }
+                .foregroundStyle(.white.opacity(isSelected ? 1 : 0.7))
+                .accessibilityLabel(title(for: tab))
             }
-            .padding(.horizontal, 16)
-            .animation(.snappy(duration: 0.32), value: showsReply)
+            .frame(height: Self.height)
+            .glassEffect(.regular.interactive(), in: .capsule)
+
+            if reservesReply {
+                // Empty slot; the open thread draws the button here.
+                Color.clear
+                    .frame(width: Self.height, height: Self.height)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(.horizontal, Self.horizontalPadding)
+        .animation(.snappy(duration: 0.32), value: reservesReply)
+    }
+
+    private func title(for tab: AppTab) -> String {
+        switch tab {
+        case .talks: "Talks"
+        case .you: "You"
+        case .archive: "Archive"
         }
     }
 
-    private var tabs: some View {
-        HStack(spacing: 0) {
-            ForEach(items, id: \.tab) { item in
-                Button {
-                    selection = item.tab
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: item.symbol)
-                            .font(.system(size: 20, weight: .medium))
-                        Text(item.title)
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundStyle(.white.opacity(selection == item.tab ? 1 : 0.7))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background {
-                        if selection == item.tab {
-                            Capsule()
-                                .fill(.white.opacity(0.14))
-                                .padding(5)
-                        }
-                    }
-                    .contentShape(.capsule)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(selection == item.tab ? [.isSelected] : [])
-            }
+    private func symbol(for tab: AppTab) -> String {
+        switch tab {
+        case .talks: "bubble.left.and.bubble.right"
+        case .you: "person.crop.circle"
+        case .archive: "magnifyingglass"
         }
-        .frame(height: Self.height)
-        .frame(maxWidth: .infinity)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .animation(.snappy(duration: 0.25), value: selection)
+    }
+}
+
+/// The red reply circle, sized to sit in the tab bar's row.
+struct ReplyBarButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "video.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: AppTabBar.height, height: AppTabBar.height)
+                .background(Palette.record, in: .circle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Record a reply")
     }
 }
