@@ -44,6 +44,12 @@ struct NotificationsView: View {
             .navigationTitle("Notifications")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Clear") {
+                        withAnimation(.snappy) { store.clearNotifications() }
+                    }
+                    .disabled(store.derivedNotifications.isEmpty)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }

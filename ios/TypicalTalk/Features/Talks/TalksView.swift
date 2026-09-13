@@ -91,7 +91,6 @@ struct TalksView: View {
                                 .offset(x: 3, y: -1)
                         }
                     }
-                    .matchedTransitionSource(id: "notifications", in: morph)
                 }
             }
             #if DEBUG
@@ -132,8 +131,9 @@ struct TalksView: View {
                 .presentationBackground(Palette.canvas)
             }
             .sheet(isPresented: $showNotifications) {
+                // A plain slide up. Zooming from the bell all the way down to a
+                // bottom sheet travelled too far to read as a morph.
                 NotificationsView()
-                    .navigationTransition(.zoom(sourceID: "notifications", in: morph))
                     .presentationDetents([.medium, .large])
                     .presentationBackground(Palette.canvas)
             }

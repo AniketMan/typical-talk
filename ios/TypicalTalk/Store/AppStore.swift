@@ -65,6 +65,11 @@ final class AppStore {
 
     /// Notifications come from the model's own state: reactions that exist,
     /// and takes of yours that have been watched.
+    /// Everything at or before this moment has been cleared by the user.
+    var notificationsClearedAt: Date?
+
+    func clearNotifications() { notificationsClearedAt = .now }
+
     var derivedNotifications: [AppNotification] {
         var result: [AppNotification] = []
         for talk in talks {
@@ -86,6 +91,9 @@ final class AppStore {
                     ))
                 }
             }
+        }
+        if let cleared = notificationsClearedAt {
+            result.removeAll { $0.at <= cleared }
         }
         return result.sorted { $0.at > $1.at }
     }

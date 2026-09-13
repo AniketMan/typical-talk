@@ -38,12 +38,15 @@ struct YouView: View {
 
                 Section("Playback") {
                     Toggle("Always show captions", isOn: $store.alwaysShowCaptions)
+                        .tint(Palette.record)
                     Toggle("Autoplay new takes", isOn: $store.autoplayNewTakes)
+                        .tint(Palette.record)
                 }
                 .listRowBackground(Palette.raised)
 
                 Section("Notifications") {
                     Toggle("Reactions, mentions and receipts", isOn: $store.notificationsEnabled)
+                        .tint(Palette.record)
                 }
                 .listRowBackground(Palette.raised)
 
