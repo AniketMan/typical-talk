@@ -40,6 +40,9 @@ final class CameraController: NSObject {
     /// The angle the recorded file needs so it is horizon level, straight from
     /// the system rather than assumed.
     private(set) var captureRotationAngle: CGFloat = 90
+    /// True when the sensor itself is giving us a square, so no cropping is
+    /// needed and no part of the frame is lost.
+    private(set) var recordsNativeSquare = false
     var facing: Facing = .front
     var voiceOnly = false
 
@@ -90,6 +93,7 @@ final class CameraController: NSObject {
             voiceOnly = true
         }
         refreshDynamicFraming()
+        preferNativeSquare()
         startRotationCoordinator()
         start()
     }
@@ -182,6 +186,27 @@ final class CameraController: NSObject {
         framing = device.dynamicAspectRatio == .ratio16x9 ? .landscape : .portrait
     }
 
+    /// A square sensor can deliver 1:1 directly, with the whole frame intact.
+    /// Preferred over cropping whenever the hardware offers it.
+    private func preferNativeSquare() {
+        guard let device = videoInput?.device,
+              device.activeFormat.supportedDynamicAspectRatios.contains(.ratio1x1) else {
+            // Only some sensors are square. On an iPhone 17 the front camera
+            // is and the rear one is not, so this has to be re-checked on
+            // every flip and fall back to cropping when it comes up empty.
+            recordsNativeSquare = false
+            return
+        }
+        recordsNativeSquare = true
+        device.setDynamicAspectRatio(.ratio1x1) { _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                self.recordsNativeSquare = false
+                self.failure = "Could not use the square sensor: \(error.localizedDescription)"
+            }
+        }
+    }
+
     /// Only meaningful on a square sensor. Asks the device to reframe; the
     /// phone does not move.
     func setFraming(_ next: Framing) {
@@ -195,12 +220,16 @@ final class CameraController: NSObject {
         }
     }
 
-    /// Records a 1080 by 1080 square, centre cropped from the sensor.
+    /// Records a 1080 by 1080 square.
     ///
-    /// Measured before this change, a take was 1080x1920 HEVC at 7.96 Mbps of
-    /// video, about 1 MB per second. A square keeps the full 1080 height but
-    /// drops 44 percent of the pixels, so the bitrate comes down with it and
-    /// there is no portrait or landscape problem left to solve.
+    /// Measured beforehand, a take was 1080x1920 HEVC at 7.96 Mbps of video,
+    /// about 1 MB per second.
+    ///
+    /// Two ways to get there, and they are not equivalent. Where the sensor
+    /// shoots a native square, ask it for one: nothing is thrown away. Where
+    /// it does not, cropping keeps the full 1080 width and discards 44 percent
+    /// of the height, which on a selfie held at arm's length cuts off the top
+    /// and bottom of the frame.
     static let squareSide = 1080
     static let videoBitRate = 4_500_000
 
@@ -209,6 +238,8 @@ final class CameraController: NSObject {
         let available = output.supportedOutputSettingsKeys(for: connection)
         guard available.contains(AVVideoWidthKey), available.contains(AVVideoHeightKey) else { return }
 
+        // The crop is the fallback. On a square sensor the source is already
+        // 1:1, so this scales rather than discarding any of the frame.
         let codec: AVVideoCodecType = output.availableVideoCodecTypes.contains(.hevc) ? .hevc : .h264
         var settings: [String: Any] = [
             AVVideoCodecKey: codec,
@@ -267,6 +298,7 @@ final class CameraController: NSObject {
             session.commitConfiguration()
         }
         refreshDynamicFraming()
+        preferNativeSquare()
         startRotationCoordinator()
     }
 

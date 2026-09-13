@@ -23,7 +23,7 @@ struct RecorderSheet: View {
                 VStack(spacing: 14) {
                     viewfinder
                     controlBar
-                    recordButton
+                    recordRow
 
                 }
                 .padding(.horizontal, 16)
@@ -169,22 +169,6 @@ struct RecorderSheet: View {
                     camera.voiceOnly.toggle()
                 }
                 .disabled(camera.cameraUnavailable)
-                toggle("Flip", "arrow.triangle.2.circlepath.camera", on: camera.facing == .back) {
-                    camera.flip()
-                }
-                .disabled(camera.voiceOnly || camera.cameraUnavailable)
-
-                // Square sensor only. On every other camera the framing comes
-                // from how the phone is held, so there is nothing to choose.
-                if camera.supportsDynamicFraming && !camera.voiceOnly {
-                    toggle(
-                        camera.framing == .portrait ? "Portrait" : "Landscape",
-                        camera.framing == .portrait ? "rectangle.portrait" : "rectangle",
-                        on: camera.framing == .landscape
-                    ) {
-                        camera.setFraming(camera.framing == .portrait ? .landscape : .portrait)
-                    }
-                }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
@@ -209,7 +193,37 @@ struct RecorderSheet: View {
         .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
-    /// The one tinted control in the whole app.
+    /// The record button, with the camera switch beside it so both are under
+    /// the same thumb.
+    private var recordRow: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: 56, height: 56)
+            Spacer()
+            recordButton
+            Spacer()
+            flipButton
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private var flipButton: some View {
+        Button {
+            camera.flip()
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .disabled(camera.voiceOnly || camera.cameraUnavailable)
+        .opacity(camera.voiceOnly || camera.cameraUnavailable ? 0.35 : 1)
+        .accessibilityLabel(camera.facing == .front ? "Switch to back camera" : "Switch to front camera")
+    }
+
+    /// The one tinted control in the whole app. One tap starts, one tap
+    /// stops, and stopping sends.
     private var recordButton: some View {
         Button {
             Task { await tapRecord() }
@@ -228,12 +242,10 @@ struct RecorderSheet: View {
             .animation(.bouncy(duration: 0.3), value: camera.isRecording)
         }
         .buttonStyle(.plain)
-        .disabled(camera.authorization != .granted || countdown != nil)
-        .accessibilityLabel(camera.isRecording ? "Stop recording" : "Start recording")
+        .disabled(camera.authorization != .granted || countdown != nil || isSending)
+        .accessibilityLabel(camera.isRecording ? "Stop recording and send" : "Start recording")
     }
 
-    /// One tap starts, one tap stops, and stopping sends. There is no
-    /// separate send step and nothing to choose afterwards.
     private func tapRecord() async {
         if camera.isRecording {
             guard let take = await camera.finishAndWait() else { return }

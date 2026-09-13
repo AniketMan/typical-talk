@@ -5,10 +5,9 @@ import SwiftUI
 struct ArchiveView: View {
     @Binding var query: String
     @Environment(AppStore.self) private var store
-    @State private var scope: Scope = .transcripts
 
     enum Scope: String, CaseIterable, Identifiable {
-        case transcripts = "Transcripts", saved = "Saved"
+        case transcripts = "Transcripts"
         var id: Self { self }
     }
 
@@ -22,15 +21,7 @@ struct ArchiveView: View {
                     if isSearching {
                         results
                     } else {
-                        Picker("Scope", selection: $scope) {
-                            ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-
-                        switch scope {
-                        case .transcripts: browse
-                        case .saved: saved
-                        }
+                        browse
                     }
                 }
                 .padding(.horizontal, 16)
@@ -41,9 +32,6 @@ struct ArchiveView: View {
             .navigationTitle("Archive")
             .searchable(text: $query, prompt: "Search every word spoken")
             .searchToolbarBehavior(.minimize)
-            .searchScopes($scope, activation: .onSearchPresentation) {
-                ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
-            }
             .navigationDestination(for: Talk.ID.self) { ThreadView(talkID: $0) }
         }
     }
@@ -98,42 +86,6 @@ struct ArchiveView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentCard()
             }
-        }
-    }
-
-    // MARK: - Saved
-
-    @ViewBuilder
-    private var saved: some View {
-        if store.bookmarks.isEmpty {
-            ContentUnavailableView(
-                "Nothing saved yet",
-                systemImage: "bookmark",
-                description: Text("Bookmark a moment while a take is playing and it lands here.")
-            )
-            .padding(.top, 60)
-        } else {
-            sectionHeader("Bookmarks", symbol: "bookmark")
-            ForEach(store.bookmarks) { bookmark in
-                NavigationLink(value: bookmark.talkID) {
-                    HStack(spacing: 12) {
-                        Monogram(text: bookmark.author.initials, size: Scale.Avatar.medium)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(bookmark.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                            Text("\(bookmark.author.name) at \(timecode(bookmark.at))")
-                                .font(.caption2)
-                                .foregroundStyle(Palette.secondaryText)
-                        }
-                        Spacer()
-                        Text(relativeLabel(bookmark.savedAt))
-                            .font(.caption2)
-                            .foregroundStyle(Palette.secondaryText)
-                    }
-                    .contentCard(padding: 12, radius: Scale.Radius.card)
-                }
-                .buttonStyle(.plain)
-            }
-            .onDelete { store.bookmarks.remove(atOffsets: $0) }
         }
     }
 
