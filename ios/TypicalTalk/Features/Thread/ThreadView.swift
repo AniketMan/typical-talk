@@ -40,8 +40,12 @@ struct ThreadView: View {
                         TranscriptPane(message: current, player: player)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
+
+                    bottomBar(talk).padding(.top, 8)
                 }
-                .safeAreaBar(edge: .bottom, spacing: 8) { bottomBar(talk) }
+                // Pushed screens do not inherit the tab bar's inset, so the
+                // strip reserves the bar's height itself.
+                .padding(.bottom, AppTabBar.height + 12)
             } else {
                 ContentUnavailableView("Talk not found", systemImage: "questionmark.circle")
             }

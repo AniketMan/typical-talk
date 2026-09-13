@@ -10,13 +10,16 @@ struct RecorderTarget: Identifiable {
     let id: Talk.ID
 }
 
-/// The four locked tab items: Talks, Record, Archive, You. Archive takes the
-/// search role so the system floats it as its own reachable glass pill, and
-/// Record is a pass-through that expands into the recorder rather than being a
-/// destination of its own.
+/// Three tabs: Talks, You, Archive. The system tab bar is hidden and replaced
+/// by AppTabBar, so the reply action can sit in the same row as the tabs
+/// while a thread is open.
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @State private var selection: AppTab = Self.initialTab
+    @State private var archiveQuery = ""
+    @State private var router = IntentRouter.shared
+    @State private var thread = ThreadContext.shared
+    @State private var recorderTarget: RecorderTarget?
 
     /// Lets a debug build launch straight into a tab, for screenshot checks.
     private static var initialTab: AppTab {
@@ -30,56 +33,40 @@ struct RootView: View {
         return .talks
         #endif
     }
-    @State private var archiveQuery = ""
-    @State private var router = IntentRouter.shared
-    @State private var thread = ThreadContext.shared
-    @State private var path: [Talk.ID] = []
-    @State private var recorderTarget: RecorderTarget?
-    @Namespace private var recorderMorph
 
     var body: some View {
         TabView(selection: $selection) {
             Tab("Talks", systemImage: "bubble.left.and.bubble.right", value: AppTab.talks) {
                 TalksView { id in recorderTarget = RecorderTarget(id: id) }
+                    .modifier(tabBar)
             }
 
             Tab("You", systemImage: "person.crop.circle", value: AppTab.you) {
                 YouView()
+                    .modifier(tabBar)
             }
 
-            Tab("Archive", systemImage: "magnifyingglass", value: AppTab.archive, role: .search) {
+            Tab("Archive", systemImage: "magnifyingglass", value: AppTab.archive) {
                 ArchiveView(query: $archiveQuery)
+                    .modifier(tabBar)
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
         .tint(.white)
-        // The reply action lives beside the tab bar, appearing only while a
-        // thread is open. Three tabs leave room for it on the trailing side.
-        .overlay(alignment: .bottomTrailing) {
-            if thread.openTalk != nil {
-                Button {
-                    ThreadContext.shared.requestReply()
-                } label: {
-                    Image(systemName: "video.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 54, height: 54)
-                        .background(Palette.record, in: .circle)
-                        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 16)
-                .padding(.bottom, 6)
-                .transition(.scale(scale: 0.6).combined(with: .opacity))
-                .accessibilityLabel("Record a reply")
-            }
-        }
-        .animation(.snappy(duration: 0.3), value: thread.openTalk)
         .fullScreenCover(item: $recorderTarget) { target in
             RecorderSheet(destination: target.id)
         }
         .background(Palette.canvas)
-        .task { await store.loadSeed() }
+        .task {
+            await store.loadSeed()
+            #if DEBUG
+            // Debug only: launch straight into the newest thread so the bar can
+            // be checked with the reply action showing.
+            if ProcessInfo.processInfo.arguments.contains("thread:first"),
+               let first = store.talks.first {
+                TalksNavigation.shared.open = first.id
+            }
+            #endif
+        }
         // Siri and Shortcuts drive the app through the router.
         .onChange(of: router.showArchive) { _, show in
             guard show else { return }
@@ -98,5 +85,31 @@ struct RootView: View {
             TalksNavigation.shared.open = id
             router.openTalkID = nil
         }
+    }
+
+    /// Applied to each tab's root, outside its NavigationStack, so pushed
+    /// screens such as a thread inherit the bottom inset and stack their own
+    /// bars above this one instead of underneath it.
+    private var tabBar: AppTabBarModifier {
+        AppTabBarModifier(
+            selection: $selection,
+            showsReply: thread.openTalk != nil,
+            reply: { ThreadContext.shared.requestReply() }
+        )
+    }
+}
+
+struct AppTabBarModifier: ViewModifier {
+    @Binding var selection: AppTab
+    var showsReply: Bool
+    var reply: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .toolbarVisibility(.hidden, for: .tabBar)
+            .safeAreaBar(edge: .bottom) {
+                AppTabBar(selection: $selection, showsReply: showsReply, reply: reply)
+                    .padding(.bottom, 4)
+            }
     }
 }
