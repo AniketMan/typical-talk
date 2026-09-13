@@ -23,7 +23,7 @@ struct RecorderSheet: View {
                 VStack(spacing: 14) {
                     viewfinder
                     controlBar
-                    recordRow
+                    recordButton
 
                 }
                 .padding(.horizontal, 16)
@@ -161,7 +161,15 @@ struct RecorderSheet: View {
 
     private var controlBar: some View {
         GlassEffectContainer(spacing: 0) {
-            HStack(spacing: 4) {
+            HStack(spacing: 10) {
+                optionsPill
+                flipButton
+            }
+        }
+    }
+
+    private var optionsPill: some View {
+        HStack(spacing: 4) {
                 toggle("3s lock", "timer", on: handsFree) {
                     handsFree.toggle()
                 }
@@ -170,10 +178,10 @@ struct RecorderSheet: View {
                 }
                 .disabled(camera.cameraUnavailable)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .glassEffect(.regular, in: .capsule)
-        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
+        .glassEffect(.regular, in: .capsule)
     }
 
     private func toggle(_ title: String, _ symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
@@ -195,25 +203,14 @@ struct RecorderSheet: View {
 
     /// The record button, with the camera switch beside it so both are under
     /// the same thumb.
-    private var recordRow: some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: 56, height: 56)
-            Spacer()
-            recordButton
-            Spacer()
-            flipButton
-        }
-        .padding(.horizontal, 24)
-    }
-
     private var flipButton: some View {
         Button {
             camera.flip()
         } label: {
             Image(systemName: "arrow.triangle.2.circlepath.camera")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)
