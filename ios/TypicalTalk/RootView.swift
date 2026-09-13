@@ -86,15 +86,15 @@ struct RootView: View {
                 ArchiveView(query: $archiveQuery)
             }
 
-            // The search role is the system's only detached trailing circle.
-            Tab(value: AppTab.action, role: .search) {
+            // iOS 27's prominent role: the system draws this tab as its own
+            // circle beside the bar.
+            Tab(
+                inThread ? "Reply" : "New Talk",
+                systemImage: inThread ? "video.fill" : "plus",
+                value: AppTab.action,
+                role: .prominent
+            ) {
                 Color.clear
-            } label: {
-                Label {
-                    Text(inThread ? "Reply" : "New Talk")
-                } icon: {
-                    Image(uiImage: Self.redSymbol(inThread ? "video.fill" : "plus"))
-                }
             }
         }
         .tint(.white)

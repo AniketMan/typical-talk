@@ -35,7 +35,9 @@ final class ThreadPlayer {
         let engine = existingPlayer()
         engine.pause()
         isPlaying = false
-        currentTime = 0
+        // Show the resume point immediately rather than 0, so the scrubber
+        // does not start at the beginning and jump once the item is ready.
+        currentTime = resume
         duration = 0
         pendingSeek = resume > 0 ? resume : nil
         engine.replaceCurrentItem(with: AVPlayerItem(url: url))
@@ -63,7 +65,10 @@ final class ThreadPlayer {
         if total.isFinite, total > 0 { duration = total }
 
         // Apply the resume point as soon as the item can honour it.
-        if let target = pendingSeek, item.status == .readyToPlay {
+        if let target = pendingSeek {
+            // Until the item is ready, keep showing the resume point instead
+            // of the player's pre-seek time of zero.
+            guard item.status == .readyToPlay else { return }
             pendingSeek = nil
             seek(to: target)
             return

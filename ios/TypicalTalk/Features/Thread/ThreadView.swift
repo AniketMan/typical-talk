@@ -136,6 +136,9 @@ struct ThreadView: View {
                 .scrollTargetLayout()
             }
             .scrollIndicators(.hidden)
+            // Start at the newest end on first draw, so opening a thread does
+            // not show the oldest takes and then slide across.
+            .defaultScrollAnchor(.trailing, for: .initialOffset)
             .frame(maxWidth: .infinity)
             .onAppear { scroll(proxy, to: current?.id) }
             .onChange(of: current?.id) { _, id in scroll(proxy, to: id, animated: true) }
