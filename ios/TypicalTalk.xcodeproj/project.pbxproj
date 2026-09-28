@@ -180,6 +180,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Typical Talk";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Typical Talk uses the camera so you can record video takes for your talks.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Typical Talk matches your contacts so you can find people you already know here.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Typical Talk uses the microphone to record the audio of your takes.";
@@ -214,6 +215,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Typical Talk";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Typical Talk uses the camera so you can record video takes for your talks.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Typical Talk matches your contacts so you can find people you already know here.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Typical Talk uses the microphone to record the audio of your takes.";
