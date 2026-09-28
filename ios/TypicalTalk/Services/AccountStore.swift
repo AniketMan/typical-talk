@@ -14,10 +14,14 @@ final class AccountStore {
         var userID: String
         var name: String
         var email: String?
+        /// The session token from our server, and the handle it knows about.
+        var sessionToken: String?
+        var handle: String?
     }
 
     private(set) var account: Account?
     private(set) var failure: String?
+    private(set) var isWorking = false
 
     var isSignedIn: Bool { account != nil }
     var displayName: String { account?.name ?? "You" }
@@ -40,7 +44,8 @@ final class AccountStore {
         if state == .revoked || state == .notFound { signOut() }
     }
 
-    func completeSignIn(_ result: Result<ASAuthorization, any Error>) {
+    /// Apple identifies the person; the server then issues our own session.
+    func completeSignIn(_ result: Result<ASAuthorization, any Error>) async {
         switch result {
         case .failure(let error):
             // Cancelling is a choice, not a failure worth reporting.
@@ -65,10 +70,47 @@ final class AccountStore {
             )
             account = resolved
             failure = nil
-            if let data = try? JSONEncoder().encode(resolved) {
-                Keychain.write(data, for: Self.keychainKey)
+            save()
+
+            guard let identityToken = credential.identityToken
+                .flatMap({ String(data: $0, encoding: .utf8) }) else {
+                failure = "Apple did not return a sign-in token."
+                return
+            }
+
+            isWorking = true
+            defer { isWorking = false }
+            do {
+                let session = try await TalkAPI.signIn(identityToken: identityToken, name: resolved.name)
+                account?.sessionToken = session.token
+                account?.handle = session.user.handle
+                account?.name = session.user.name
+                save()
+            } catch {
+                // Signed in with Apple but not with our server: say so rather
+                // than pretending the account is ready.
+                failure = error.localizedDescription
             }
         }
+    }
+
+    /// Claims or changes the handle people can find you by.
+    func claimHandle(_ handle: String) async -> String? {
+        guard let token = account?.sessionToken else { return "Not signed in to Typical Talk." }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            account?.handle = try await TalkAPI.claimHandle(handle, token: token)
+            save()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func save() {
+        guard let account, let data = try? JSONEncoder().encode(account) else { return }
+        Keychain.write(data, for: Self.keychainKey)
     }
 
     func signOut() {

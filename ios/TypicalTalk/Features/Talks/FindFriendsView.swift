@@ -1,53 +1,184 @@
-import Contacts
 import SwiftUI
 
-/// The Friends tab: the people you already talk to, then matching device
-/// contacts and invites. Falls back to an honest empty state when contact
-/// access is refused.
+/// The Friends tab: the people you already talk to, your handle, and the two
+/// ways to add someone.
+///
+/// Contact matching is gone. Sign in with Apple provides no phone number, so
+/// there is nothing to match a contact against; a handle or an invite link is
+/// how someone reaches you now.
 struct FindFriendsView: View {
     @Environment(AppStore.self) private var store
-    @State private var suggestions: [Suggestion] = []
-    @State private var accessDenied = false
-    @State private var isSyncing = false
+    @Environment(AccountStore.self) private var account
 
-    struct Suggestion: Identifiable, Hashable {
-        let id = UUID()
-        var name: String
-        var invited = false
+    @State private var handleField = ""
+    @State private var handleError: String?
+    @State private var search = ""
+    @State private var found: TalkAPI.RemoteUser?
+    @State private var searchNote: String?
+    @State private var invite: TalkAPI.Invite?
+    @State private var inviteCode = ""
+    @State private var redeemNote: String?
+    @State private var isBusy = false
+
+    private var knownPeople: [Person] {
+        var seen = Set<UUID>()
+        return store.talks.flatMap(\.members)
+            .filter { !$0.isYou && seen.insert($0.id).inserted }
+            .sorted { $0.name < $1.name }
     }
-
-    private let inviteText = "Join me on Typical Talk for easy video messages."
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                hero
-                if !knownPeople.isEmpty { knownPeopleList }
-                actions
-                if accessDenied {
-                    deniedNotice
-                } else if !suggestions.isEmpty {
-                    suggestionList
-                } else if store.contactsSynced {
-                    caughtUp
-                }
+            VStack(alignment: .leading, spacing: 24) {
+                yourHandle
+                addByHandle
+                addByInvite
+                if !knownPeople.isEmpty { people }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .task { handleField = account.account?.handle ?? "" }
     }
 
-    /// Everyone you already have a talk with.
-    private var knownPeople: [Person] {
-        var seen = Set<UUID>()
-        return store.talks.flatMap(\.members).filter { person in
-            !person.isYou && seen.insert(person.id).inserted
+    // MARK: - Your handle
+
+    private var yourHandle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your handle")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Palette.secondaryText)
+
+            HStack(spacing: 8) {
+                Text("@")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Palette.secondaryText)
+                TextField("handle", text: $handleField)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.subheadline.weight(.semibold))
+
+                Button(account.account?.handle == nil ? "Claim" : "Save") {
+                    Task {
+                        handleError = await account.claimHandle(handleField)
+                    }
+                }
+                .buttonStyle(.glass)
+                .font(.caption.weight(.semibold))
+                .disabled(handleField.isEmpty || account.isWorking)
+            }
+            .contentCard(padding: 12, radius: 18)
+
+            Text(handleError ?? "This is how people find you. Three to twenty characters.")
+                .font(.caption2)
+                .foregroundStyle(handleError == nil ? Palette.secondaryText : Palette.record)
         }
-        .sorted { $0.name < $1.name }
     }
 
-    private var knownPeopleList: some View {
+    // MARK: - Add by handle
+
+    private var addByHandle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Add by handle")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Palette.secondaryText)
+
+            HStack(spacing: 8) {
+                Text("@")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Palette.secondaryText)
+                TextField("their handle", text: $search)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.subheadline)
+                    .onSubmit { Task { await lookUp() } }
+
+                Button("Find") { Task { await lookUp() } }
+                    .buttonStyle(.glass)
+                    .font(.caption.weight(.semibold))
+                    .disabled(search.isEmpty || isBusy)
+            }
+            .contentCard(padding: 12, radius: 18)
+
+            if let found {
+                HStack(spacing: 12) {
+                    Monogram(text: initials(found.name), size: Scale.Avatar.small)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(found.name).font(.subheadline.weight(.semibold))
+                        Text("@\(found.handle ?? search)")
+                            .font(.caption2)
+                            .foregroundStyle(Palette.secondaryText)
+                    }
+                    Spacer()
+                    Button("Start a talk") { Task { await startTalk(with: found) } }
+                        .buttonStyle(.glassProminent)
+                        .font(.caption.weight(.semibold))
+                        .disabled(isBusy)
+                }
+                .contentCard(padding: 12, radius: 18)
+            }
+
+            if let searchNote {
+                Text(searchNote)
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondaryText)
+            }
+        }
+    }
+
+    // MARK: - Add by invite
+
+    private var addByInvite: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Invite someone")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Palette.secondaryText)
+
+            if let invite {
+                ShareLink(item: URL(string: invite.url)!) {
+                    Label("Share your invite link", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.extraLarge)
+
+                Text("Single use, and it expires in a week.")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondaryText)
+            } else {
+                Button {
+                    Task { await makeInvite() }
+                } label: {
+                    Label("Create an invite link", systemImage: "link")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .controlSize(.extraLarge)
+                .disabled(isBusy)
+            }
+
+            HStack(spacing: 8) {
+                TextField("Paste an invite code", text: $inviteCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.subheadline)
+                Button("Join") { Task { await redeem() } }
+                    .buttonStyle(.glass)
+                    .font(.caption.weight(.semibold))
+                    .disabled(inviteCode.isEmpty || isBusy)
+            }
+            .contentCard(padding: 12, radius: 18)
+
+            if let redeemNote {
+                Text(redeemNote)
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondaryText)
+            }
+        }
+    }
+
+    private var people: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("On Typical Talk")
                 .font(.footnote.weight(.semibold))
@@ -64,152 +195,61 @@ struct FindFriendsView: View {
         }
     }
 
-    private var hero: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Match contacts who already use Typical Talk, then invite anyone else you want here.")
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondaryText)
-        }
-    }
+    // MARK: - Actions
 
-    private var actions: some View {
-        VStack(spacing: 10) {
-            Button {
-                Task { await sync() }
-            } label: {
-                Label(store.contactsSynced ? "Contacts synced" : "Sync contacts", systemImage: "person.2")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.glassProminent)
-            // The app tint is white, and a prominent button fills itself with
-            // the tint, which put white text on a white fill.
-            .tint(Palette.record)
-            .controlSize(.extraLarge)
-            // Once access is refused the button cannot do anything, so it
-            // should not stand there looking like the next step.
-            .disabled(store.contactsSynced || isSyncing || accessDenied)
-
-            ShareLink(item: inviteText) {
-                Label("Share an invite", systemImage: "square.and.arrow.up")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.glass)
-            .controlSize(.extraLarge)
-        }
-    }
-
-    private var suggestionList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Suggested contacts")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Palette.secondaryText)
-
-            ForEach(suggestions) { person in
-                HStack(spacing: 12) {
-                    Monogram(text: initials(person.name), size: Scale.Avatar.small)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(person.name).font(.subheadline.weight(.semibold))
-                        Text("In your contacts")
-                            .font(.caption2)
-                            .foregroundStyle(Palette.secondaryText)
-                    }
-                    Spacer()
-                    if person.invited {
-                        Label("Invited", systemImage: "checkmark")
-                            .font(.caption.weight(.semibold))
-                            .labelStyle(.titleAndIcon)
-                            .foregroundStyle(Palette.secondaryText)
-                    } else {
-                        Button("Invite") { invite(person) }
-                            .buttonStyle(.glass)
-                            .font(.caption.weight(.semibold))
-                        Button("Skip") { skip(person) }
-                            .buttonStyle(.plain)
-                            .font(.caption)
-                            .foregroundStyle(Palette.secondaryText)
-                    }
-                }
-                .contentCard(padding: 12, radius: 18)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy(duration: 0.3), value: suggestions)
-    }
-
-    private var deniedNotice: some View {
-        ContentUnavailableView {
-            Label("Contacts are off", systemImage: "person.crop.circle.badge.xmark")
-        } description: {
-            Text("Typical Talk cannot see your contacts. Turn access on in Settings, or share an invite link instead.")
-        } actions: {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            .buttonStyle(.glass)
-        }
-    }
-
-    private var caughtUp: some View {
-        ContentUnavailableView(
-            "You are all caught up",
-            systemImage: "checkmark.circle",
-            description: Text("Share an invite whenever someone new comes to mind.")
-        )
-    }
-
-    // MARK: - Contacts
-
-    private func sync() async {
-        isSyncing = true
-        defer { isSyncing = false }
-        let granted = (try? await CNContactStore().requestAccess(for: .contacts)) ?? false
-        guard granted else {
-            accessDenied = true
+    private func lookUp() async {
+        guard let token = account.account?.sessionToken else {
+            searchNote = "Sign in again to search."
             return
         }
-        let names = await Self.contactNames()
-        withAnimation(.snappy(duration: 0.3)) {
-            suggestions = names.map { Suggestion(name: $0) }
-            store.contactsSynced = true
+        isBusy = true
+        defer { isBusy = false }
+        found = nil
+        searchNote = nil
+        do {
+            let match = try await TalkAPI.findUser(handle: search, token: token)
+            found = match
+            if match == nil { searchNote = "Nobody has that handle." }
+        } catch {
+            searchNote = error.localizedDescription
         }
     }
 
-    /// Reads names on a background task. The store is created inside the task
-    /// so nothing actor-isolated crosses the boundary.
-    private static func contactNames() async -> [String] {
-        await Task.detached(priority: .userInitiated) { () -> [String] in
-            let store = CNContactStore()
-            let keys = [CNContactGivenNameKey, CNContactFamilyNameKey] as [CNKeyDescriptor]
-            let request = CNContactFetchRequest(keysToFetch: keys)
-            var names: [String] = []
-            try? store.enumerateContacts(with: request) { contact, stop in
-                let name = "\(contact.givenName) \(contact.familyName)"
-                    .trimmingCharacters(in: .whitespaces)
-                if !name.isEmpty { names.append(name) }
-                if names.count >= 25 { stop.pointee = true }
-            }
-            return names
-        }.value
-    }
-
-    private func invite(_ person: Suggestion) {
-        guard let index = suggestions.firstIndex(of: person) else { return }
-        suggestions[index].invited = true
-        store.invitedContacts.insert(person.name)
-        Task {
-            try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.snappy(duration: 0.28)) {
-                suggestions.removeAll { $0.id == person.id }
-            }
+    private func startTalk(with user: TalkAPI.RemoteUser) async {
+        guard let token = account.account?.sessionToken else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await TalkAPI.startTalk(with: user.id, token: token)
+            store.startTalk(with: Person(name: user.name))
+            searchNote = "Talk started with \(user.name)."
+            found = nil
+            search = ""
+        } catch {
+            searchNote = error.localizedDescription
         }
     }
 
-    private func skip(_ person: Suggestion) {
-        store.skippedContacts.insert(person.name)
-        withAnimation(.snappy(duration: 0.28)) {
-            suggestions.removeAll { $0.id == person.id }
+    private func makeInvite() async {
+        guard let token = account.account?.sessionToken else { return }
+        isBusy = true
+        defer { isBusy = false }
+        invite = try? await TalkAPI.createInvite(token: token)
+    }
+
+    private func redeem() async {
+        guard let token = account.account?.sessionToken else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await TalkAPI.redeemInvite(
+                code: inviteCode.trimmingCharacters(in: .whitespaces),
+                token: token
+            )
+            redeemNote = "You are connected. The talk is in Talks."
+            inviteCode = ""
+        } catch {
+            redeemNote = error.localizedDescription
         }
     }
 

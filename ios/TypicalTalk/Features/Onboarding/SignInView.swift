@@ -34,11 +34,15 @@ struct SignInView: View {
                 SignInWithAppleButton(.signIn) { request in
                     request.requestedScopes = [.fullName, .email]
                 } onCompletion: { result in
-                    account.completeSignIn(result)
+                    Task { await account.completeSignIn(result) }
                 }
                 .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
                 .frame(height: 52)
                 .clipShape(Capsule())
+
+                if account.isWorking {
+                    ProgressView().tint(.white)
+                }
 
                 if let failure = account.failure {
                     Text(failure)

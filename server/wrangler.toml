@@ -1,0 +1,22 @@
+name = "typical-talk"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# The bundle identifier the Apple identity token must be issued for.
+[vars]
+APPLE_BUNDLE_ID = "com.typicaltalk.TypicalTalk"
+INVITE_BASE_URL = "https://typical-talk.anibhatt.workers.dev"
+
+# Takes live here as ordinary files. Cloudflare does not charge for
+# downloads, so playback costs nothing.
+[[r2_buckets]]
+binding = "TAKES"
+bucket_name = "typical-talk-takes"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "typical-talk"
+database_id = "2125bcff-1fee-490b-839f-79379935b505"
+
+# Set with: wrangler secret put SESSION_SECRET
+# Used to sign session tokens. Any random 32+ character string.
