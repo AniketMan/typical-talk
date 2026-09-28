@@ -3,7 +3,7 @@ import SwiftUI
 /// Profile and every app setting. There is no Settings tab by design.
 struct YouView: View {
     @Environment(AppStore.self) private var store
-    @State private var displayName = "Your profile"
+    @Environment(AccountStore.self) private var account
     @State private var showStorage = false
 
     private var storageUsed: String {
@@ -23,11 +23,10 @@ struct YouView: View {
             List {
                 Section {
                     HStack(spacing: 14) {
-                        Monogram(text: "Y", size: Scale.Avatar.profile)
+                        Monogram(text: String(account.displayName.prefix(1)).uppercased(), size: Scale.Avatar.profile)
                         VStack(alignment: .leading, spacing: 4) {
-                            TextField("Your name", text: $displayName)
-                                .font(.headline)
-                            Text("Everything below stays on this device.")
+                            Text(account.displayName).font(.headline)
+                            Text(account.account?.email ?? "Signed in with Apple")
                                 .font(.caption)
                                 .foregroundStyle(Palette.secondaryText)
                         }
@@ -50,6 +49,11 @@ struct YouView: View {
                 Section("Storage") {
                     LabeledContent("Takes on this device", value: storageUsed)
                     Button("Manage storage") { showStorage = true }
+                }
+                .listRowBackground(Palette.raised)
+
+                Section {
+                    Button("Sign out", role: .destructive) { account.signOut() }
                 }
                 .listRowBackground(Palette.raised)
 
