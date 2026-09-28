@@ -49,6 +49,19 @@ enum TalkAPI {
         )
     }
 
+    /// Apple sends a name only on the very first sign-in, so it has to be
+    /// correctable afterwards.
+    static func updateName(_ name: String, token: String) async throws -> RemoteUser {
+        struct Updated: Codable { let user: RemoteUser }
+        let result: Updated = try await send(
+            "/v1/me",
+            method: "PUT",
+            body: ["name": name],
+            token: token
+        )
+        return result.user
+    }
+
     static func claimHandle(_ handle: String, token: String) async throws -> String {
         struct Claimed: Codable { let handle: String }
         let result: Claimed = try await send(

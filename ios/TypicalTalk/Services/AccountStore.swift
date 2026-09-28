@@ -123,6 +123,23 @@ final class AccountStore {
         }
     }
 
+    /// Changes the name shown to other people.
+    func rename(to name: String) async -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "A name cannot be empty." }
+        guard let token = account?.sessionToken else { return "Sign in first." }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let updated = try await TalkAPI.updateName(trimmed, token: token)
+            account?.name = updated.name
+            save()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     private func save() {
         guard let account, let data = try? JSONEncoder().encode(account) else { return }
         Keychain.write(data, for: Self.keychainKey)

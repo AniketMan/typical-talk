@@ -52,6 +52,14 @@ export default {
 
       if (method === "GET" && path === "/v1/me") return json({ user });
 
+      if (method === "PUT" && path === "/v1/me") {
+        const body = (await request.json()) as { name?: string };
+        const name = (body.name ?? "").trim();
+        if (name.length === 0) return fail(400, "A name cannot be empty.");
+        await env.DB.prepare("UPDATE users SET name = ? WHERE id = ?").bind(name, user.id).run();
+        return json({ user: { ...user, name } });
+      }
+
       if (method === "PUT" && path === "/v1/me/handle") {
         return claimHandle(request, env, user);
       }

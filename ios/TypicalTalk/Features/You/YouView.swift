@@ -4,6 +4,8 @@ import SwiftUI
 struct YouView: View {
     @Environment(AppStore.self) private var store
     @Environment(AccountStore.self) private var account
+    @State private var nameField = ""
+    @State private var nameError: String?
     @State private var showStorage = false
 
     private var storageUsed: String {
@@ -25,10 +27,17 @@ struct YouView: View {
                     HStack(spacing: 14) {
                         Monogram(text: String(account.displayName.prefix(1)).uppercased(), size: Scale.Avatar.profile)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(account.displayName).font(.headline)
-                            Text(account.account?.email ?? "Signed in with Apple")
+                            // Apple sends a name only on first sign-in, so it
+                            // has to be editable rather than fixed forever.
+                            TextField("Your name", text: $nameField)
+                                .font(.headline)
+                                .submitLabel(.done)
+                                .onSubmit {
+                                    Task { nameError = await account.rename(to: nameField) }
+                                }
+                            Text(nameError ?? account.account?.email ?? "Signed in with Apple")
                                 .font(.caption)
-                                .foregroundStyle(Palette.secondaryText)
+                                .foregroundStyle(nameError == nil ? Palette.secondaryText : Palette.record)
                         }
                     }
                     .padding(.vertical, 6)
@@ -67,6 +76,7 @@ struct YouView: View {
             .scrollContentBackground(.hidden)
             .background(Palette.canvas)
             .navigationTitle("You")
+            .task { nameField = account.displayName }
             .navigationSubtitle("\(store.talks.count) talks")
             .sheet(isPresented: $showStorage) {
                 StorageView()
