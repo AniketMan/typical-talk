@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Invite links open the app through this scheme. Everything else in
+	     this file is still generated from the build settings and merged in. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.typicaltalk.TypicalTalk.invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>typicaltalk</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

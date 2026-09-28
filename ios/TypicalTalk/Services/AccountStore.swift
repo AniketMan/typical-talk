@@ -108,6 +108,21 @@ final class AccountStore {
         }
     }
 
+    /// Accepts an invite code, from a link or pasted by hand.
+    func redeem(inviteCode code: String) async -> String {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "That invite link had no code in it." }
+        guard let token = account?.sessionToken else { return "Sign in first." }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            _ = try await TalkAPI.redeemInvite(code: trimmed, token: token)
+            return "You are connected. The talk is in Talks."
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     private func save() {
         guard let account, let data = try? JSONEncoder().encode(account) else { return }
         Keychain.write(data, for: Self.keychainKey)
