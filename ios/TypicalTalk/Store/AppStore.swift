@@ -25,7 +25,7 @@ final class AppStore {
     var skippedContacts: Set<String> = []
     var contactsSynced = false
 
-    private(set) var isLoadingSeed = true
+    private(set) var isLoadingSeed = false
 
     init() {
         talks = []
@@ -34,12 +34,10 @@ final class AppStore {
         notifications = []
     }
 
-    /// Loads the bundled conversations. Transcription is deliberately not
-    /// done here: it runs on demand when a thread is opened, so a slow or
-    /// failing speech model cannot hold up or take down launch.
+    /// Nothing to load: talks arrive from the server once you add someone.
+    /// The app used to ship sample conversations, which meant every tester
+    /// opened it to someone else's recordings.
     func loadSeed() async {
-        guard talks.isEmpty else { return }
-        talks = await SampleData.talks()
         isLoadingSeed = false
     }
 
@@ -135,7 +133,7 @@ final class AppStore {
     /// Creates an empty thread with someone, ready for its first take.
     @discardableResult
     func startTalk(with person: Person) -> Talk.ID {
-        let talk = Talk(title: person.name, members: [SampleData.you, person], messages: [])
+        let talk = Talk(title: person.name, members: [LocalUser.you, person], messages: [])
         talks.insert(talk, at: 0)
         return talk.id
     }
@@ -218,7 +216,7 @@ final class AppStore {
     func send(take url: URL, duration: Double, transcript: [TranscriptSegment], voiceOnly: Bool, to talkID: Talk.ID) {
         guard let t = binding(for: talkID) else { return }
         let message = Message(
-            author: SampleData.you,
+            author: LocalUser.you,
             sentAt: .now,
             duration: duration,
             isVoiceOnly: voiceOnly,
