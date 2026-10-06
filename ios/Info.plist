@@ -4,6 +4,8 @@
 <dict>
 	<!-- Invite links open the app through this scheme. Everything else in
 	     this file is still generated from the build settings and merged in. -->
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
