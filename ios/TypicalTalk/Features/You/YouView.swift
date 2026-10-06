@@ -31,6 +31,10 @@ struct YouView: View {
                             // has to be editable rather than fixed forever.
                             TextField("Your name", text: $nameField)
                                 .font(.headline)
+                                .onChange(of: nameField) { _, new in
+                                    // The server caps names at 40 characters.
+                                    if new.count > 40 { nameField = String(new.prefix(40)) }
+                                }
                                 .submitLabel(.done)
                                 .onSubmit {
                                     Task { nameError = await account.rename(to: nameField) }

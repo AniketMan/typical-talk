@@ -10,6 +10,8 @@
  * more than shaving a hop, and it keeps bucket credentials off the phone.
  */
 
+import { checkHandle, checkName, checkInviteCode, checkID, escapeHTML } from "./validate";
+
 export interface Env {
   DB: D1Database;
   TAKES: R2Bucket;
@@ -53,11 +55,14 @@ export default {
       if (method === "GET" && path === "/v1/me") return json({ user });
 
       if (method === "PUT" && path === "/v1/me") {
+        if (!(await withinLimit(env, "rename", user.id, 10, 60_000))) return tooMany();
         const body = (await request.json()) as { name?: string };
-        const name = (body.name ?? "").trim();
-        if (name.length === 0) return fail(400, "A name cannot be empty.");
-        await env.DB.prepare("UPDATE users SET name = ? WHERE id = ?").bind(name, user.id).run();
-        return json({ user: { ...user, name } });
+        const checked = checkName(body.name);
+        if (!checked.value) return fail(400, checked.error!);
+        await env.DB.prepare("UPDATE users SET name = ? WHERE id = ?")
+          .bind(checked.value, user.id)
+          .run();
+        return json({ user: { ...user, name: checked.value } });
       }
 
       if (method === "PUT" && path === "/v1/me/handle") {
@@ -102,10 +107,50 @@ export default {
 
       return fail(404, "No such endpoint.");
     } catch (error) {
-      return fail(500, error instanceof Error ? error.message : "Unknown error.");
+      // Never hand internals to the caller; log them instead.
+      console.error("request failed", path, error);
+      return fail(500, "Something went wrong.");
     }
   },
 };
+
+/**
+ * A fixed window counter in D1. Not exact under concurrency, which is fine:
+ * it exists to stop grinding, not to be a precise quota.
+ */
+async function withinLimit(
+  env: Env,
+  action: string,
+  actor: string,
+  limit: number,
+  windowMs: number
+): Promise<boolean> {
+  const window = Math.floor(now() / windowMs);
+  const bucket = `${action}:${actor}:${window}`;
+  const expires = (window + 1) * windowMs;
+
+  await env.DB.prepare(
+    `INSERT INTO rate_limits (bucket, hits, expires_at) VALUES (?, 1, ?)
+     ON CONFLICT(bucket) DO UPDATE SET hits = hits + 1`
+  )
+    .bind(bucket, expires)
+    .run();
+
+  const row = await env.DB.prepare("SELECT hits FROM rate_limits WHERE bucket = ?")
+    .bind(bucket)
+    .first<{ hits: number }>();
+
+  // Opportunistic cleanup so the table does not grow without bound.
+  if ((row?.hits ?? 0) % 25 === 0) {
+    await env.DB.prepare("DELETE FROM rate_limits WHERE expires_at < ?").bind(now()).run();
+  }
+  return (row?.hits ?? 0) <= limit;
+}
+
+const tooMany = () => fail(429, "Too many attempts. Try again shortly.");
+
+/** Best available caller identity before a session exists. */
+const clientIP = (request: Request) => request.headers.get("cf-connecting-ip") ?? "unknown";
 
 // MARK: - Identity
 
@@ -128,6 +173,7 @@ async function startSession(request: Request, env: Env): Promise<Response> {
     name?: string;
   };
   if (!body.identityToken) return fail(400, "Missing identity token.");
+  if (!(await withinLimit(env, "session", clientIP(request), 20, 60_000))) return tooMany();
 
   const claims = await verifyAppleToken(body.identityToken, env.APPLE_BUNDLE_ID);
   if (!claims) return fail(401, "That sign-in could not be verified with Apple.");
@@ -147,7 +193,8 @@ async function startSession(request: Request, env: Env): Promise<Response> {
   } else {
     // Apple sends the name only on the first sign-in, so the client passes it
     // along and it is stored once.
-    const created = { id: id(), name: body.name?.trim() || "Someone", email };
+    const checked = checkName(body.name);
+    const created = { id: id(), name: checked.value ?? "Someone", email };
     await env.DB.prepare(
       "INSERT INTO users (id, apple_user_id, name, email, created_at) VALUES (?, ?, ?, ?, ?)"
     )
@@ -200,9 +247,21 @@ async function verifyAppleToken(token: string, bundleID: string) {
   return payload as { sub: string; email?: string };
 }
 
+const SESSION_LIFETIME = 90 * 24 * 60 * 60 * 1000;
+
 async function issueSessionToken(userID: string, env: Env): Promise<string> {
-  const payload = encodeBase64URL(JSON.stringify({ sub: userID, iat: now() }));
+  const payload = encodeBase64URL(
+    JSON.stringify({ sub: userID, iat: now(), exp: now() + SESSION_LIFETIME })
+  );
   return `${payload}.${await sign(payload, env.SESSION_SECRET)}`;
+}
+
+/** Compares in constant time, so a wrong signature leaks no timing. */
+function sameSignature(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let differing = 0;
+  for (let i = 0; i < a.length; i++) differing |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return differing === 0;
 }
 
 async function authenticate(request: Request, env: Env): Promise<User | null> {
@@ -211,9 +270,17 @@ async function authenticate(request: Request, env: Env): Promise<User | null> {
 
   const [payload, signature] = header.slice(7).split(".");
   if (!payload || !signature) return null;
-  if ((await sign(payload, env.SESSION_SECRET)) !== signature) return null;
+  if (!sameSignature(await sign(payload, env.SESSION_SECRET), signature)) return null;
 
-  const { sub } = JSON.parse(decodeBase64URL(payload)) as { sub: string };
+  let sub: string;
+  let exp: number | undefined;
+  try {
+    ({ sub, exp } = JSON.parse(decodeBase64URL(payload)) as { sub: string; exp?: number });
+  } catch {
+    return null;
+  }
+  // Tokens issued before expiry existed are treated as expired.
+  if (typeof exp !== "number" || exp < now()) return null;
   const user = await env.DB.prepare("SELECT id, name, email FROM users WHERE id = ?")
     .bind(sub)
     .first<User>();
@@ -243,12 +310,12 @@ async function handleFor(userID: string, env: Env): Promise<string | null> {
 }
 
 async function claimHandle(request: Request, env: Env, user: User): Promise<Response> {
-  const body = (await request.json()) as { handle?: string };
-  const handle = (body.handle ?? "").trim().toLowerCase().replace(/^@/, "");
+  if (!(await withinLimit(env, "handle", user.id, 10, 60_000))) return tooMany();
 
-  if (!/^[a-z0-9_]{3,20}$/.test(handle)) {
-    return fail(400, "Handles are 3 to 20 characters: letters, numbers and underscores.");
-  }
+  const body = (await request.json()) as { handle?: string };
+  const checked = checkHandle(body.handle);
+  if (!checked.value) return fail(400, checked.error!);
+  const handle = checked.value;
 
   const taken = await env.DB.prepare(
     "SELECT user_id FROM handles WHERE handle = ? AND user_id != ?"
@@ -267,8 +334,13 @@ async function claimHandle(request: Request, env: Env, user: User): Promise<Resp
 }
 
 async function findByHandle(url: URL, env: Env, user: User): Promise<Response> {
-  const handle = (url.searchParams.get("handle") ?? "").trim().toLowerCase().replace(/^@/, "");
-  if (!handle) return fail(400, "Give a handle to look for.");
+  if (!(await withinLimit(env, "lookup", user.id, 30, 60_000))) return tooMany();
+
+  const checked = checkHandle(url.searchParams.get("handle"));
+  // A malformed handle cannot match anyone, and saying so would confirm the
+  // rules to someone probing. Answer as though nobody has it.
+  if (!checked.value) return json({ user: null });
+  const handle = checked.value;
 
   const row = await env.DB.prepare(
     `SELECT users.id, users.name, handles.handle
@@ -285,9 +357,13 @@ async function findByHandle(url: URL, env: Env, user: User): Promise<Response> {
 // MARK: - Adding a friend, way two: an invite link
 
 async function createInvite(env: Env, user: User): Promise<Response> {
+  if (!(await withinLimit(env, "invite", user.id, 20, 3_600_000))) return tooMany();
   // Short enough to read aloud, long enough not to be guessed.
-  const code = [...crypto.getRandomValues(new Uint8Array(6))]
-    .map((byte) => "abcdefghjkmnpqrstuvwxyz23456789"[byte % 31])
+  // Eight characters from an unambiguous alphabet: about 40 bits, which with
+  // the rate limit on redeeming is far out of reach of guessing.
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const code = [...crypto.getRandomValues(new Uint8Array(8))]
+    .map((byte) => alphabet[byte % alphabet.length])
     .join("");
   const week = 7 * 24 * 60 * 60 * 1000;
 
@@ -300,7 +376,13 @@ async function createInvite(env: Env, user: User): Promise<Response> {
   return json({ code, url: `${env.INVITE_BASE_URL}/i/${code}` });
 }
 
-async function redeemInvite(code: string, env: Env, user: User): Promise<Response> {
+async function redeemInvite(raw: string, env: Env, user: User): Promise<Response> {
+  if (!(await withinLimit(env, "redeem", user.id, 10, 3_600_000))) return tooMany();
+
+  const checked = checkInviteCode(raw);
+  if (!checked.value) return fail(404, "That invite does not exist.");
+  const code = checked.value;
+
   const invite = await env.DB.prepare(
     "SELECT code, inviter_id, expires_at, redeemed_by FROM invites WHERE code = ?"
   )
@@ -353,7 +435,10 @@ async function ensureTalk(a: string, b: string, env: Env): Promise<string> {
 }
 
 /** The page an invite link opens in a browser. */
-async function invitePage(code: string, env: Env): Promise<Response> {
+async function invitePage(raw: string, env: Env): Promise<Response> {
+  const checked = checkInviteCode(raw);
+  const code = checked.value ?? "";
+
   const invite = await env.DB.prepare(
     `SELECT users.name FROM invites JOIN users ON users.id = invites.inviter_id
      WHERE invites.code = ?`
@@ -361,7 +446,9 @@ async function invitePage(code: string, env: Env): Promise<Response> {
     .bind(code)
     .first<{ name: string }>();
 
-  const who = invite?.name ?? "Someone";
+  // Escaped: a name is attacker controlled, and this page is opened by other
+  // people. Unescaped, a name containing markup ran in their browser.
+  const who = escapeHTML(invite?.name ?? "Someone");
   const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Join ${who} on Typical Talk</title>
@@ -371,7 +458,7 @@ a{display:inline-block;margin-top:24px;background:#ff536f;color:#fff;text-decora
 padding:14px 28px;border-radius:999px;font-weight:600}</style></head>
 <body><div><h1>${who} invited you to Typical Talk</h1>
 <p>Async video messages. Record a take, send it, they watch when they can.</p>
-<a href="typicaltalk://invite/${code}">Open in Typical Talk</a></div></body></html>`;
+<a href="typicaltalk://invite/${encodeURIComponent(code)}">Open in Typical Talk</a></div></body></html>`;
 
   return new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
@@ -379,9 +466,23 @@ padding:14px 28px;border-radius:999px;font-weight:600}</style></head>
 // MARK: - Talks and takes
 
 async function startTalk(request: Request, env: Env, user: User): Promise<Response> {
+  if (!(await withinLimit(env, "startTalk", user.id, 30, 3_600_000))) return tooMany();
+
   const body = (await request.json()) as { userID?: string };
-  if (!body.userID) return fail(400, "Say who the talk is with.");
-  const talkID = await ensureTalk(user.id, body.userID, env);
+  const checked = checkID(body.userID);
+  if (!checked.value) return fail(400, "Say who the talk is with.");
+  if (checked.value === user.id) return fail(400, "That is you.");
+
+  // Only people who published a handle can be started with by id. Without
+  // this, a leaked id is enough to open a talk with anyone.
+  const target = await env.DB.prepare(
+    "SELECT users.id FROM users JOIN handles ON handles.user_id = users.id WHERE users.id = ?"
+  )
+    .bind(checked.value)
+    .first();
+  if (!target) return fail(404, "No such person.");
+
+  const talkID = await ensureTalk(user.id, checked.value, env);
   return json({ talkID });
 }
 
@@ -426,9 +527,16 @@ async function uploadTake(
 ): Promise<Response> {
   if (!(await isMember(talkID, user.id, env))) return fail(403, "Not your talk.");
 
-  const duration = Number(request.headers.get("x-take-duration") ?? 0);
+  if (!(await withinLimit(env, "upload", user.id, 60, 3_600_000))) return tooMany();
+
+  const duration = Math.min(Math.max(Number(request.headers.get("x-take-duration") ?? 0), 0), 600);
   const voiceOnly = request.headers.get("x-take-voice-only") === "1";
   if (!request.body) return fail(400, "No take in the request.");
+
+  // A two minute square take is about 70 MB at the recorder's bitrate.
+  const maxBytes = 120 * 1024 * 1024;
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) return fail(413, "That take is too large.");
 
   const takeID = id();
   const key = `takes/${talkID}/${takeID}.mov`;
@@ -463,6 +571,12 @@ async function downloadTake(takeID: string, env: Env, user: User): Promise<Respo
 }
 
 async function markWatched(takeID: string, env: Env, user: User): Promise<Response> {
+  const take = await env.DB.prepare("SELECT talk_id FROM takes WHERE id = ?")
+    .bind(takeID)
+    .first<{ talk_id: string }>();
+  if (!take) return fail(404, "No such take.");
+  if (!(await isMember(take.talk_id, user.id, env))) return fail(403, "Not your talk.");
+
   await env.DB.prepare(
     "INSERT OR REPLACE INTO watches (take_id, user_id, watched_at) VALUES (?, ?, ?)"
   )

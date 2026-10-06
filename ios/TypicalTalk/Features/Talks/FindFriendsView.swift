@@ -58,6 +58,9 @@ struct FindFriendsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.subheadline.weight(.semibold))
+                    .onChange(of: handleField) { _, new in
+                        handleField = Self.sanitizeHandle(new)
+                    }
 
                 Button(account.account?.handle == nil ? "Claim" : "Save") {
                     Task {
@@ -92,6 +95,9 @@ struct FindFriendsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.subheadline)
+                    .onChange(of: search) { _, new in
+                        search = Self.sanitizeHandle(new)
+                    }
                     .onSubmit { Task { await lookUp() } }
 
                 Button("Find") { Task { await lookUp() } }
@@ -251,6 +257,12 @@ struct FindFriendsView: View {
         } catch {
             redeemNote = error.localizedDescription
         }
+    }
+
+    /// Lower case letters, digits and underscores, 20 at most. Emoji, spaces
+    /// and punctuation simply cannot be typed into a handle.
+    static func sanitizeHandle(_ raw: String) -> String {
+        String(raw.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }.prefix(20))
     }
 
     private func initials(_ name: String) -> String {

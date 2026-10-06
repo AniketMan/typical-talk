@@ -65,3 +65,11 @@ CREATE TABLE IF NOT EXISTS watches (
   watched_at INTEGER NOT NULL,
   PRIMARY KEY (take_id, user_id)
 );
+
+-- Counters for rate limiting, one row per actor per window. Cheap to write,
+-- and old rows are deleted as they are read.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket     TEXT PRIMARY KEY,   -- action + actor + window
+  hits       INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
