@@ -29,21 +29,15 @@ enum TalkIntentError: Error, CustomLocalizedStringResourceConvertible {
 
 /// A person in a conversation, matched to Apple's messaging schema so Siri and
 /// Apple Intelligence recognise who is being referred to.
-@AppEntity(schema: .messages.messagePerson)
-struct TalkPersonEntity {
+struct TalkPersonEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Person"
+
     let id: String
     @Property(title: "Name") var name: String
-    @Property(title: "Person") var person: IntentPerson
 
     init(_ source: Person) {
         id = source.id.uuidString
         name = source.name
-        person = IntentPerson(
-            identifier: .applicationDefined(source.id.uuidString),
-            name: .displayName(source.name),
-            handle: IntentPerson.Handle(applicationDefined: source.id.uuidString),
-            isMe: source.isYou
-        )
     }
 
     var displayRepresentation: DisplayRepresentation {
@@ -76,14 +70,16 @@ struct TalkPersonQuery: EntityQuery {
 }
 
 /// How a thread can be described, for requests like "unread talks".
-@AppEnum(schema: .messages.conversationAttribute)
-enum TalkAttribute: String {
+enum TalkAttribute: String, AppEnum {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Talk Attribute"
+
     case unread
     case read
 
-    static var caseDisplayRepresentations: [TalkAttribute: DisplayRepresentation] {
-        [.unread: "Unread", .read: "Watched"]
-    }
+    static let caseDisplayRepresentations: [TalkAttribute: DisplayRepresentation] = [
+        .unread: "Unread",
+        .read: "Watched"
+    ]
 }
 
 /// A single take. This is a plain AppEntity rather than Apple's message
@@ -163,8 +159,9 @@ struct TakeQuery: EntityQuery, EntityStringQuery {
 
 /// A thread, conforming to Apple's conversation schema so "open my talk with
 /// Sofia" resolves without the user learning our wording.
-@AppEntity(schema: .messages.conversation)
-struct TalkEntity {
+struct TalkEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Talk"
+
     let id: String
     @Property(title: "Name") var conversationName: String?
     @Property(title: "Display name") var displayName: String

@@ -29,6 +29,14 @@ final class AccountStore {
     private static let keychainKey = "com.typicaltalk.account"
 
     init() {
+        #if DEBUG
+        // Debug only: stand in for a signed-in account so the tabs can be
+        // screenshotted without signing in to Apple.
+        if ProcessInfo.processInfo.arguments.contains("preview:signedin") {
+            account = Account(userID: "preview", name: "Aniket", email: nil)
+            return
+        }
+        #endif
         account = Keychain.read(Self.keychainKey).flatMap {
             try? JSONDecoder().decode(Account.self, from: $0)
         }

@@ -95,15 +95,27 @@ struct RootView: View {
                 ArchiveView(query: $archiveQuery)
             }
 
-            // iOS 27's prominent role: the system draws this tab as its own
-            // circle beside the bar.
-            Tab(
-                inThread ? "Reply" : "New Talk",
-                systemImage: inThread ? "video.fill" : "plus",
-                value: AppTab.action,
-                role: .prominent
-            ) {
-                Color.clear
+            // iOS 27 draws a prominent tab as its own circle beside the bar.
+            // On iOS 26 that role does not exist, so the same action sits in
+            // the bar as an ordinary item: it still changes job and still
+            // never disappears.
+            if #available(iOS 27.0, *) {
+                Tab(
+                    inThread ? "Reply" : "New Talk",
+                    systemImage: inThread ? "video.fill" : "plus",
+                    value: AppTab.action,
+                    role: .prominent
+                ) {
+                    Color.clear
+                }
+            } else {
+                Tab(
+                    inThread ? "Reply" : "New Talk",
+                    systemImage: inThread ? "video.fill" : "plus",
+                    value: AppTab.action
+                ) {
+                    Color.clear
+                }
             }
         }
         .tint(Palette.record)
