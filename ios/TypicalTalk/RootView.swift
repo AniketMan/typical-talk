@@ -152,6 +152,24 @@ struct RootView: View {
                 try? FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: copy)
                 store.send(take: copy, duration: 10, transcript: [], voiceOnly: false, to: first.id)
             }
+            // Debug only: run the safety and group actions without tapping.
+            let me = store.me
+            let others = store.talks.flatMap(\.members).filter { $0.id != me.id }
+            switch environment["TT_DEBUG_ACTION"] {
+            case "group":
+                let result = await store.createGroup(with: Array(Set(others)), title: "Test Crew")
+                print("TT_DEBUG group:", result.0 as Any, result.1 as Any)
+            case "report":
+                if let talk = store.talks.first(where: { $0.messages.contains { !$0.author.isYou } }),
+                   let message = talk.messages.first(where: { !$0.author.isYou }) {
+                    print("TT_DEBUG report:", await store.report(message, in: talk.id, reason: .spam, details: nil) as Any)
+                }
+            case "block":
+                if let person = others.first { print("TT_DEBUG block:", await store.block(person) as Any) }
+            case "newtalk":
+                showNewTalk = true
+            default: break
+            }
             if ProcessInfo.processInfo.arguments.contains("thread:first"), let first = store.talks.first {
                 TalksNavigation.shared.open = first.id
             }

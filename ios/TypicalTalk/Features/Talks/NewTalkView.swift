@@ -84,6 +84,13 @@ struct NewTalkView: View {
                 }
             }
             .background(Palette.canvas)
+            #if DEBUG
+            .task {
+                if ProcessInfo.processInfo.environment["TT_DEBUG_PICK"] == "all" {
+                    selected = Set(people.map(\.id))
+                }
+            }
+            #endif
             .navigationTitle("New Talk")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
