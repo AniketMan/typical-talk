@@ -48,8 +48,10 @@ struct TalksView: View {
                 .padding(.bottom, 24)
             }
             .scrollEdgeEffectStyle(.soft, for: .top)
+            .refreshable { await store.sync() }
             .background(Palette.canvas)
             .navigationTitle("Talks")
+            .navigationSubtitle(store.lastSyncFailed ? "Offline, showing saved talks" : "")
             .navigationDestination(for: Talk.ID.self) { id in
                 if store.talk(id: id) != nil {
                     ThreadView(talkID: id)
@@ -88,14 +90,19 @@ struct TalksView: View {
         }
     }
 
+    @ViewBuilder
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("Nothing here yet", systemImage: "bubble.left.and.bubble.right")
-        } description: {
-            Text(filter == .unread
-                 ? "You are caught up. Every take has been watched."
-                 : "No one is recording right now.")
+        if !store.hasSynced && store.talks.isEmpty && !store.lastSyncFailed {
+            ProgressView().padding(.top, 60)
+        } else {
+            ContentUnavailableView {
+                Label("Nothing here yet", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text(filter == .unread
+                     ? "You are caught up. Every take has been watched."
+                     : "Add a friend in the Friends tab, then start a talk with the plus button.")
+            }
+            .padding(.top, 40)
         }
-        .padding(.top, 40)
     }
 }

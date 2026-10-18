@@ -13,6 +13,12 @@ struct ThreadView: View {
     @State private var showTranscript = false
     @State private var showRecorder = false
     @State private var autoplayOnLoad = false
+    @State private var showReport = false
+    @State private var showBlock = false
+    @State private var showLeave = false
+    @State private var showAddPeople = false
+    @State private var actionError: String?
+    @Environment(\.dismiss) private var dismiss
     @Namespace private var replyMorph
 
     private var talk: Talk? { store.talk(id: talkID) }
@@ -53,6 +59,45 @@ struct ThreadView: View {
         .navigationTitle(talk?.title ?? "Talk")
         .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { threadMenu }
+        .confirmationDialog("Report this take", isPresented: $showReport, titleVisibility: .visible) {
+            ForEach(TalkAPI.ReportReason.allCases) { reason in
+                Button(reason.label) { report(reason) }
+            }
+        } message: {
+            Text("It is removed from your phone and sent to us to review.")
+        }
+        .confirmationDialog(
+            "Block \(current?.author.name ?? "this person")?",
+            isPresented: $showBlock,
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) { blockAuthor() }
+        } message: {
+            Text("They cannot find you or send you takes, and their takes disappear from your phone.")
+        }
+        .confirmationDialog(
+            (talk?.isGroup ?? false) ? "Leave this group?" : "Delete this conversation?",
+            isPresented: $showLeave,
+            titleVisibility: .visible
+        ) {
+            Button((talk?.isGroup ?? false) ? "Leave" : "Delete", role: .destructive) { leaveTalk() }
+        } message: {
+            Text("The takes in it are removed from your phone.")
+        }
+        .alert("Couldn't do that", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
+        .sheet(isPresented: $showAddPeople) {
+            AddPeopleView(talkID: talkID)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Palette.canvas)
+        }
         .fullScreenCover(isPresented: $showRecorder) {
             RecorderSheet(destination: talkID)
         }
@@ -65,6 +110,65 @@ struct ThreadView: View {
             saveProgress()
             player.teardown()
             if ThreadContext.shared.openTalk == talkID { ThreadContext.shared.openTalk = nil }
+        }
+    }
+
+    // MARK: - Menu
+
+    @ToolbarContentBuilder
+    private var threadMenu: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                if let talk, talk.isGroup {
+                    Button("Add people", systemImage: "person.badge.plus") { showAddPeople = true }
+                }
+                if let current, !current.author.isYou {
+                    Button("Report this take", systemImage: "flag") { showReport = true }
+                    Button("Block \(current.author.name)", systemImage: "hand.raised", role: .destructive) {
+                        showBlock = true
+                    }
+                }
+                Button(
+                    (talk?.isGroup ?? false) ? "Leave group" : "Delete conversation",
+                    systemImage: "rectangle.portrait.and.arrow.right",
+                    role: .destructive
+                ) { showLeave = true }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+        }
+    }
+
+    private func report(_ reason: TalkAPI.ReportReason) {
+        guard let current else { return }
+        player.teardown()
+        Task {
+            if let problem = await store.report(current, in: talkID, reason: reason, details: nil) {
+                actionError = problem
+            }
+        }
+    }
+
+    private func blockAuthor() {
+        guard let person = current?.author, !person.isYou else { return }
+        player.teardown()
+        Task {
+            if let problem = await store.block(person) {
+                actionError = problem
+            } else if store.talk(id: talkID) == nil {
+                dismiss()
+            }
+        }
+    }
+
+    private func leaveTalk() {
+        player.teardown()
+        Task {
+            if let problem = await store.leave(talkID) {
+                actionError = problem
+            } else {
+                dismiss()
+            }
         }
     }
 
@@ -94,13 +198,52 @@ struct ThreadView: View {
         saveProgress()
         autoplayOnLoad = true
         selected = message.id
-        store.markWatched(messageID: message.id, in: talkID)
+        // Only a take that is on the phone can have been watched.
+        if message.fileName != nil { store.markWatched(messageID: message.id, in: talkID) }
     }
 
     // MARK: - Bottom bar
 
     private func bottomBar(_ talk: Talk) -> some View {
-        timeline(talk).padding(.bottom, 6)
+        VStack(spacing: 8) {
+            deliveryBanner(talk)
+            timeline(talk)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// Shown while one of your takes is on its way, or if it could not go.
+    @ViewBuilder
+    private func deliveryBanner(_ talk: Talk) -> some View {
+        if let stuck = talk.messages.first(where: { $0.author.isYou && $0.delivery != .sent }) {
+            HStack(spacing: 10) {
+                if stuck.delivery == .sending {
+                    ProgressView(value: store.uploadProgress[stuck.id] ?? 0)
+                        .progressViewStyle(.linear)
+                        .tint(Palette.record)
+                        .frame(width: 80)
+                    Text("Sending\((store.uploadProgress[stuck.id] ?? 0) > 0 ? " \(Int((store.uploadProgress[stuck.id] ?? 0) * 100))%" : "")")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.secondaryText)
+                    Spacer(minLength: 0)
+                } else {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Palette.record)
+                    Text(store.failureNotes[stuck.id] ?? "Your take was not sent.")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button("Retry") { store.retry(stuck.id, in: talkID) }
+                        .buttonStyle(.glass)
+                    Button("Delete", role: .destructive) { store.discard(stuck.id, in: talkID) }
+                        .buttonStyle(.glass)
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .transition(.opacity)
+        }
     }
 
     /// Every take in the thread, oldest on the left so the newest sits on the
@@ -212,3 +355,77 @@ struct TranscriptPane: View {
     }
 }
 
+
+
+/// Pick people you already talk to and add them to a group.
+struct AddPeopleView: View {
+    let talkID: Talk.ID
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: Set<UUID> = []
+    @State private var isWorking = false
+    @State private var errorMessage: String?
+
+    private var candidates: [Person] {
+        let inGroup = Set(store.talk(id: talkID)?.members.map(\.id) ?? [])
+        var seen = Set<UUID>()
+        return store.talks.flatMap(\.members)
+            .filter { !$0.isYou && !inGroup.contains($0.id) && seen.insert($0.id).inserted }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if candidates.isEmpty {
+                    ContentUnavailableView(
+                        "No one to add",
+                        systemImage: "person.2",
+                        description: Text("Everyone you talk to is already in this group.")
+                    )
+                    .listRowBackground(Color.clear)
+                }
+                ForEach(candidates) { person in
+                    Button {
+                        if selected.contains(person.id) { selected.remove(person.id) } else { selected.insert(person.id) }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Monogram(text: person.initials, size: Scale.Avatar.medium)
+                            Text(person.name).font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Image(systemName: selected.contains(person.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selected.contains(person.id) ? Palette.record : Palette.secondaryText)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Palette.raised)
+                }
+                if let errorMessage {
+                    Text(errorMessage).font(.caption).foregroundStyle(Palette.record)
+                        .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(Palette.canvas)
+            .navigationTitle("Add people")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add") {
+                        Task {
+                            isWorking = true
+                            defer { isWorking = false }
+                            let people = candidates.filter { selected.contains($0.id) }
+                            errorMessage = await store.addPeople(people, to: talkID)
+                            if errorMessage == nil { dismiss() }
+                        }
+                    }
+                    .disabled(selected.isEmpty || isWorking)
+                }
+            }
+        }
+    }
+}

@@ -30,7 +30,9 @@ struct TakePlayerView: View {
             video
             controls
         }
-        .task(id: message.id) { await start() }
+        // Runs again when the file arrives, so a take that was still
+        // downloading when it was selected starts as soon as it lands.
+        .task(id: "\(message.id.uuidString)-\(message.fileName ?? "")") { await start() }
         .onChange(of: player.currentTime) { _, now in
             guard player.isPlaying else { return }
             store.saveProgress(now, for: message.id, duration: length)
@@ -69,6 +71,8 @@ struct TakePlayerView: View {
                 .opacity(player.isSettled ? 1 : 0)
                 .animation(.easeOut(duration: 0.18), value: player.isSettled)
                 .allowsHitTesting(false)
+        } else if message.fileName == nil {
+            downloading
         } else if message.isVoiceOnly {
             WaveformPlaceholder()
         } else {
@@ -81,6 +85,27 @@ struct TakePlayerView: View {
             .foregroundStyle(Palette.secondaryText)
             .padding(.horizontal, 32)
         }
+    }
+
+    /// The take is on the server and on its way here.
+    private var downloading: some View {
+        VStack(spacing: 12) {
+            if let fraction = store.downloadProgress[message.id] {
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .tint(Palette.record)
+                    .frame(width: 140)
+                Text("Downloading").font(.caption)
+            } else {
+                Image(systemName: "icloud.and.arrow.down").font(.title2)
+                Text(store.lastSyncFailed ? "Waiting for a connection" : "Getting this take")
+                    .font(.caption)
+                Button("Try again") { store.retryDownload(message.id) }
+                    .buttonStyle(.glass)
+                    .font(.caption.weight(.semibold))
+            }
+        }
+        .foregroundStyle(Palette.secondaryText)
     }
 
     // MARK: - Controls, underneath
@@ -180,7 +205,8 @@ struct TakePlayerView: View {
         // The resume point goes through load() because seeking a player whose
         // item is not ready yet is silently dropped.
         player.load(message.localVideoURL, resumingAt: store.resumePosition(for: message.id))
-        store.markWatched(messageID: message.id, in: talkID)
+        // Only a take that is on the phone can have been watched.
+        if message.fileName != nil { store.markWatched(messageID: message.id, in: talkID) }
 
         if player.hasMedia, !player.isPlaying, autoplayOnLoad || store.autoplayNewTakes {
             player.togglePlay()

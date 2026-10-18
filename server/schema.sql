@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS users (
   apple_user_id TEXT NOT NULL UNIQUE,       -- stable identifier from Apple
   name          TEXT NOT NULL,
   email         TEXT,
-  created_at    INTEGER NOT NULL
+  created_at    INTEGER NOT NULL,
+  apple_refresh_token TEXT,                 -- to revoke at deletion
+  is_seed       INTEGER NOT NULL DEFAULT 0
 );
 
 -- Handles are how someone finds you on purpose: unique, lower case, and
@@ -35,7 +37,8 @@ CREATE TABLE IF NOT EXISTS invites (
 CREATE TABLE IF NOT EXISTS talks (
   id         TEXT PRIMARY KEY,
   title      TEXT,                          -- null for one to one: name comes from the other member
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  created_by TEXT                           -- who made a group
 );
 
 CREATE TABLE IF NOT EXISTS members (
@@ -54,7 +57,8 @@ CREATE TABLE IF NOT EXISTS takes (
   duration    REAL NOT NULL DEFAULT 0,
   voice_only  INTEGER NOT NULL DEFAULT 0,
   sent_at     INTEGER,                      -- null until the upload completes
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  expired_at  INTEGER                       -- file deleted at this time
 );
 CREATE INDEX IF NOT EXISTS takes_by_talk ON takes(talk_id, sent_at);
 
@@ -72,4 +76,44 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   bucket     TEXT PRIMARY KEY,   -- action + actor + window
   hits       INTEGER NOT NULL,
   expires_at INTEGER NOT NULL
+);
+
+-- Phones that can be pushed to.
+CREATE TABLE IF NOT EXISTS devices (
+  token       TEXT PRIMARY KEY,                -- APNs device token, hex
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  environment TEXT NOT NULL,                   -- sandbox or production
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS devices_by_user ON devices(user_id);
+
+CREATE TABLE IF NOT EXISTS blocks (
+  blocker_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (blocker_id, blocked_id)
+);
+CREATE INDEX IF NOT EXISTS blocks_by_blocked ON blocks(blocked_id);
+
+-- Deliberately no foreign keys: a report is evidence and has to outlive the
+-- take, the person reported, and the person who filed it.
+CREATE TABLE IF NOT EXISTS reports (
+  id               TEXT PRIMARY KEY,
+  reporter_id      TEXT NOT NULL,
+  take_id          TEXT,
+  reported_user_id TEXT,
+  reason           TEXT NOT NULL,
+  details          TEXT,
+  created_at       INTEGER NOT NULL,
+  handled_at       INTEGER
+);
+CREATE INDEX IF NOT EXISTS reports_by_reporter ON reports(reporter_id, take_id);
+CREATE INDEX IF NOT EXISTS reports_open ON reports(handled_at, created_at);
+
+-- Apple accounts that have been removed for abuse and cannot sign up again.
+CREATE TABLE IF NOT EXISTS bans (
+  apple_user_id TEXT PRIMARY KEY,
+  reason        TEXT,
+  created_at    INTEGER NOT NULL
 );

@@ -222,17 +222,16 @@ struct FindFriendsView: View {
     }
 
     private func startTalk(with user: TalkAPI.RemoteUser) async {
-        guard let token = account.account?.sessionToken else { return }
         isBusy = true
         defer { isBusy = false }
-        do {
-            _ = try await TalkAPI.startTalk(with: user.id, token: token)
-            store.startTalk(with: Person(name: user.name))
-            searchNote = "Talk started with \(user.name)."
+        guard let id = UUID(uuidString: user.id) else { return }
+        let (talk, problem) = await store.openTalk(with: Person(id: id, name: user.name))
+        if talk != nil {
+            searchNote = "Talk started with \(user.name). It is in Talks."
             found = nil
             search = ""
-        } catch {
-            searchNote = error.localizedDescription
+        } else {
+            searchNote = problem
         }
     }
 
@@ -254,6 +253,7 @@ struct FindFriendsView: View {
             )
             redeemNote = "You are connected. The talk is in Talks."
             inviteCode = ""
+            await store.sync()
         } catch {
             redeemNote = error.localizedDescription
         }

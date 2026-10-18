@@ -5,6 +5,7 @@ compatibility_date = "2026-09-01"
 # The bundle identifier the Apple identity token must be issued for.
 [vars]
 APPLE_BUNDLE_ID = "com.typicaltalk.TypicalTalk"
+APPLE_TEAM_ID = "5BF427L96N"
 INVITE_BASE_URL = "https://typical-talk.anibhatt.workers.dev"
 
 # Takes live here as ordinary files. Cloudflare does not charge for
@@ -20,3 +21,12 @@ database_id = "2125bcff-1fee-490b-839f-79379935b505"
 
 # Set with: wrangler secret put SESSION_SECRET
 # Used to sign session tokens. Any random 32+ character string.
+
+# Runs once a day: deletes takes past their lifetime and tidies small tables.
+[triggers]
+crons = ["17 3 * * *"]
+
+# Secrets, all optional and set with `wrangler secret put <NAME>`:
+#   APPLE_SIWA_KEY_ID, APPLE_SIWA_PRIVATE_KEY   revoke Sign in with Apple at deletion
+#   APNS_KEY_ID, APNS_PRIVATE_KEY               push notifications
+#   ADMIN_TOKEN                                 switches on /admin for handling reports

@@ -76,6 +76,22 @@ struct TakeThumbnail: View {
                     .padding(3)
             }
         }
+        .overlay {
+            // Still on its way to the phone, or from it.
+            if message.fileName == nil && message.delivery == .sent {
+                ProgressView().controlSize(.small).tint(.white)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if message.author.isYou, message.delivery == .failed {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white, Palette.record)
+                    .padding(3)
+            } else if message.author.isYou, message.delivery == .sending {
+                ProgressView().controlSize(.mini).tint(.white).padding(4)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if !message.watched && !message.author.isYou {
                 Circle()
@@ -85,7 +101,7 @@ struct TakeThumbnail: View {
                     .padding(3)
             }
         }
-        .task(id: message.id) {
+        .task(id: "\(message.id.uuidString)-\(message.fileName ?? "")") {
             if let url = message.localVideoURL {
                 poster = await VideoPoster.firstFrame(of: url)
             }

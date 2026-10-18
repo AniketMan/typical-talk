@@ -1,6 +1,6 @@
 import Foundation
 
-struct Person: Identifiable, Hashable, Sendable {
+struct Person: Identifiable, Hashable, Sendable, Codable {
     let id: UUID
     var name: String
     var isYou: Bool = false
@@ -18,7 +18,7 @@ struct Person: Identifiable, Hashable, Sendable {
 
 /// One segment of an on-device transcript. `start` is seconds into the take,
 /// which is what makes tapping a word seek the player.
-struct TranscriptSegment: Identifiable, Hashable, Sendable {
+struct TranscriptSegment: Identifiable, Hashable, Sendable, Codable {
     let id: UUID
     var start: Double
     var text: String
@@ -31,7 +31,7 @@ struct TranscriptSegment: Identifiable, Hashable, Sendable {
 }
 
 /// An auto-chapter, segmented on device and drawn as a tick on the scrubber.
-struct Chapter: Identifiable, Hashable, Sendable {
+struct Chapter: Identifiable, Hashable, Sendable, Codable {
     let id: UUID
     var start: Double
     var title: String
@@ -43,19 +43,41 @@ struct Chapter: Identifiable, Hashable, Sendable {
     }
 }
 
-struct Message: Identifiable, Hashable, Sendable {
+/// Where one of your own takes has got to on its way to the other person.
+enum Delivery: String, Hashable, Sendable, Codable {
+    /// On the server. Takes that arrive from other people are always this.
+    case sent
+    /// Still uploading, or waiting for a connection to upload.
+    case sending
+    /// The server or the network refused it. Can be retried.
+    case failed
+}
+
+struct Message: Identifiable, Hashable, Sendable, Codable {
+    /// The same id on every phone and on the server, so a take is never
+    /// duplicated by syncing it back.
     let id: UUID
     var author: Person
     var sentAt: Date
     var duration: Double
     var isVoiceOnly: Bool = false
+    /// Whether you have watched it. Your own takes count as watched.
     var watched: Bool = false
+    /// People who have watched it, which is what a receipt is. Only the
+    /// sender is told, so this is empty on takes from other people.
+    var watchedBy: [UUID] = []
+    var delivery: Delivery = .sent
     var bookmarkedAt: [Double] = []
     var reactions: [String] = []
     var transcript: [TranscriptSegment] = []
     var chapters: [Chapter] = []
-    /// Set when the take was captured on this device in this session.
-    var localVideoURL: URL?
+    /// The file in the takes folder, by name. A name rather than a URL,
+    /// because the app's container path can change between launches.
+    var fileName: String?
+
+    /// Where the video is on this device, once it has been recorded here or
+    /// downloaded.
+    var localVideoURL: URL? { fileName.map(TakeFiles.url(for:)) }
 
     /// Nil until this take has actually been transcribed, so callers can omit
     /// the line instead of printing a placeholder on every row.
@@ -70,11 +92,13 @@ struct Message: Identifiable, Hashable, Sendable {
         duration: Double,
         isVoiceOnly: Bool = false,
         watched: Bool = false,
+        watchedBy: [UUID] = [],
+        delivery: Delivery = .sent,
         bookmarkedAt: [Double] = [],
         reactions: [String] = [],
         transcript: [TranscriptSegment] = [],
         chapters: [Chapter] = [],
-        localVideoURL: URL? = nil
+        fileName: String? = nil
     ) {
         self.id = id
         self.author = author
@@ -82,22 +106,28 @@ struct Message: Identifiable, Hashable, Sendable {
         self.duration = duration
         self.isVoiceOnly = isVoiceOnly
         self.watched = watched
+        self.watchedBy = watchedBy
+        self.delivery = delivery
         self.bookmarkedAt = bookmarkedAt
         self.reactions = reactions
         self.transcript = transcript
         self.chapters = chapters
-        self.localVideoURL = localVideoURL
+        self.fileName = fileName
     }
 }
 
-struct Talk: Identifiable, Hashable, Sendable {
+struct Talk: Identifiable, Hashable, Sendable, Codable {
     let id: UUID
     var title: String
     var members: [Person]
     /// Newest first, everywhere (locked ordering decision).
     var messages: [Message]
+    /// Set by the server for talks made as a group, so a group that has
+    /// shrunk to two people is still a group.
+    var isGroupTalk: Bool = false
+    var createdAt: Date = .now
 
-    var isGroup: Bool { members.count > 2 }
+    var isGroup: Bool { isGroupTalk || members.count > 2 }
     var latest: Message? { messages.first }
     var unreadCount: Int { messages.filter { !$0.watched && !$0.author.isYou }.count }
     var hasUnread: Bool { unreadCount > 0 }
@@ -111,12 +141,24 @@ struct Talk: Identifiable, Hashable, Sendable {
         messages.filter { !$0.watched && !$0.author.isYou }.map(\.duration).reduce(0, +)
     }
 
-    init(id: UUID = UUID(), title: String, members: [Person], messages: [Message]) {
+    init(
+        id: UUID = UUID(),
+        title: String,
+        members: [Person],
+        messages: [Message],
+        isGroupTalk: Bool = false,
+        createdAt: Date = .now
+    ) {
         self.id = id
         self.title = title
         self.members = members
         self.messages = messages
+        self.isGroupTalk = isGroupTalk
+        self.createdAt = createdAt
     }
+
+    /// When the thread last had anything happen in it.
+    var lastActivity: Date { latest?.sentAt ?? createdAt }
 
     /// The quiet line under the title. Derived from what is actually true of
     /// this thread, so it can never claim someone is watching when no one is.
@@ -132,7 +174,11 @@ struct Talk: Identifiable, Hashable, Sendable {
                 : "\(who) sent \(unreadCount) new takes"
         }
         if let mine = messages.first, mine.author.isYou {
-            return mine.watched ? "Sent" : "Sending"
+            switch mine.delivery {
+            case .sending: return "Sending"
+            case .failed: return "Not sent"
+            case .sent: return mine.watchedBy.isEmpty ? "Delivered" : "Watched"
+            }
         }
         if let newest = messages.first {
             return "Watched \(relativeLabel(newest.sentAt).lowercased())"
@@ -141,7 +187,7 @@ struct Talk: Identifiable, Hashable, Sendable {
     }
 }
 
-struct Bookmark: Identifiable, Hashable, Sendable {
+struct Bookmark: Identifiable, Hashable, Sendable, Codable {
     let id: UUID
     var title: String
     var talkID: UUID

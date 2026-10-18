@@ -23,6 +23,8 @@ const RESERVED_HANDLES = new Set([
 // eslint-disable-next-line no-misleading-character-class
 const INVISIBLE = /[\u0000-\u001F\u007F-\u009F­͏؜ᅟᅠ឴឵᠋-᠎​-‏‪-‮⁠-⁯﻿￹-￻]/u;
 
+const INVISIBLE_GLOBAL = new RegExp(INVISIBLE.source, "gu");
+
 /** Emoji and pictographs. Fine in a take, not in a name people must read. */
 const PICTOGRAPHIC = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
 
@@ -88,11 +90,40 @@ export function checkInviteCode(raw: unknown): Checked<string> {
   return { value: code };
 }
 
-/** Ids we issue are UUIDs; anything else never matches a row anyway. */
+/**
+ * Ids are UUIDs. They are lower cased here because Swift writes them upper
+ * case, and the same id must not exist twice in two spellings.
+ */
 export function checkID(raw: unknown): Checked<string> {
   if (typeof raw !== "string") return { error: "Missing id." };
-  if (!/^[0-9a-f-]{36}$/i.test(raw)) return { error: "Not a valid id." };
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) {
+    return { error: "Not a valid id." };
+  }
+  return { value: raw.toLowerCase() };
+}
+
+/** An APNs device token is hex; anything else is not one. */
+export function checkDeviceToken(raw: unknown): Checked<string> {
+  if (typeof raw !== "string") return { error: "Missing device token." };
+  const token = raw.trim().toLowerCase();
+  if (!/^[0-9a-f]{32,200}$/.test(token)) return { error: "Not a device token." };
+  return { value: token };
+}
+
+const REPORT_REASONS = new Set(["harassment", "nudity", "violence", "spam", "other"]);
+
+export function checkReportReason(raw: unknown): Checked<string> {
+  if (typeof raw !== "string" || !REPORT_REASONS.has(raw)) {
+    return { error: "Pick a reason for the report." };
+  }
   return { value: raw };
+}
+
+/** Free text the reporter adds. Kept short and stripped of control characters. */
+export function checkDetails(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.replace(INVISIBLE_GLOBAL, "").trim().slice(0, 500);
+  return text.length > 0 ? text : null;
 }
 
 /** Escapes text before it goes anywhere near HTML. */

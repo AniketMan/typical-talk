@@ -128,16 +128,35 @@ struct RootView: View {
         }
         .background(Palette.canvas)
         .task {
-            await store.loadSeed()
-            #if DEBUG
+            // Ask for push in its own task: the permission prompt waits for an
+            // answer, and syncing must not.
+            if store.notificationsEnabled { await PushRegistrar.shared.enable() }
+        }
+        .task {
+            // Keep the phone current: now, and every twenty seconds while the
+            // app is open. Pushes cover the rest.
+            while !Task.isCancelled {
+                await store.sync()
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
+        #if DEBUG
+        .task {
             // Debug only: launch straight into the newest thread for
-            // screenshot checks.
-            if ProcessInfo.processInfo.arguments.contains("thread:first"),
-               let first = store.talks.first {
+            // screenshot checks, and send a given video as a take, because a
+            // simulator has no camera to record one.
+            let environment = ProcessInfo.processInfo.environment
+            try? await Task.sleep(for: .seconds(2))
+            if let path = environment["TT_DEBUG_SEND"], let first = store.talks.first {
+                let copy = FileManager.default.temporaryDirectory.appendingPathComponent("debug-\(UUID().uuidString).mov")
+                try? FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: copy)
+                store.send(take: copy, duration: 10, transcript: [], voiceOnly: false, to: first.id)
+            }
+            if ProcessInfo.processInfo.arguments.contains("thread:first"), let first = store.talks.first {
                 TalksNavigation.shared.open = first.id
             }
-            #endif
         }
+        #endif
         // Siri and Shortcuts drive the app through the router.
         .onChange(of: router.showArchive) { _, show in
             guard show else { return }

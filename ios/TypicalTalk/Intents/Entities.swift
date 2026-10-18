@@ -10,7 +10,7 @@ enum IntentBridge {
 
     static func requireStore() async throws -> AppStore {
         guard let store else { throw TalkIntentError.notReady }
-        if store.talks.isEmpty { await store.loadSeed() }
+        if store.talks.isEmpty { await store.sync() }
         return store
     }
 }

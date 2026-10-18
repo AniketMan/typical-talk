@@ -6,6 +6,18 @@
 	     this file is still generated from the build settings and merged in. -->
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<!-- A push with content-available wakes the app to fetch the take. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<!-- Lets a debug build talk to a server on this Mac. Does nothing for the
+	     real server, which is https. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

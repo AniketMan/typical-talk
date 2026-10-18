@@ -17,6 +17,9 @@ final class AccountStore {
         /// The session token from our server, and the handle it knows about.
         var sessionToken: String?
         var handle: String?
+        /// Our own id for this person, which is what the server and other
+        /// phones know them by. Apple's `userID` above never leaves sign in.
+        var serverID: String?
     }
 
     private(set) var account: Account?
@@ -24,6 +27,8 @@ final class AccountStore {
     private(set) var isWorking = false
 
     var isSignedIn: Bool { account != nil }
+    /// The id other phones know you by, as a UUID.
+    var serverUUID: UUID? { account?.serverID.flatMap(UUID.init(uuidString:)) }
     var displayName: String { account?.name ?? "You" }
 
     private static let keychainKey = "com.typicaltalk.account"
@@ -32,6 +37,20 @@ final class AccountStore {
         #if DEBUG
         // Debug only: stand in for a signed-in account so the tabs can be
         // screenshotted without signing in to Apple.
+        let environment = ProcessInfo.processInfo.environment
+        if let token = environment["TT_PREVIEW_TOKEN"], let user = environment["TT_PREVIEW_USER"] {
+            // Debug only: a session minted by a local server, so the whole
+            // sync path can be driven without signing in to Apple.
+            account = Account(
+                userID: "preview",
+                name: environment["TT_PREVIEW_NAME"] ?? "Preview",
+                email: nil,
+                sessionToken: token,
+                handle: nil,
+                serverID: user
+            )
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("preview:signedin") {
             account = Account(userID: "preview", name: "Aniket", email: nil)
             return
@@ -50,6 +69,29 @@ final class AccountStore {
         let provider = ASAuthorizationAppleIDProvider()
         let state = try? await provider.credentialState(forUserID: account.userID)
         if state == .revoked || state == .notFound { signOut() }
+    }
+
+    /// Fills in what an older sign in did not store, and notices a session
+    /// that has ended.
+    func ensureProfile() async throws {
+        guard let token = account?.sessionToken else { return }
+        do {
+            let user = try await TalkAPI.me(token: token)
+            account?.serverID = user.id
+            account?.name = user.name
+            account?.handle = user.handle
+            save()
+        } catch TalkAPI.Failure.unauthorized {
+            sessionEnded()
+            throw TalkAPI.Failure.unauthorized
+        }
+    }
+
+    /// The server no longer accepts this session. Signing in again makes a
+    /// new one.
+    func sessionEnded() {
+        signOut()
+        failure = TalkAPI.Failure.unauthorized.errorDescription
     }
 
     /// Apple identifies the person; the server then issues our own session.
@@ -76,6 +118,8 @@ final class AccountStore {
                 name: provided.isEmpty ? (account?.name ?? "You") : provided,
                 email: credential.email ?? account?.email
             )
+            let authorizationCode = credential.authorizationCode
+                .flatMap { String(data: $0, encoding: .utf8) }
             account = resolved
             failure = nil
             save()
@@ -89,8 +133,13 @@ final class AccountStore {
             isWorking = true
             defer { isWorking = false }
             do {
-                let session = try await TalkAPI.signIn(identityToken: identityToken, name: resolved.name)
+                let session = try await TalkAPI.signIn(
+                    identityToken: identityToken,
+                    authorizationCode: authorizationCode,
+                    name: resolved.name
+                )
                 account?.sessionToken = session.token
+                account?.serverID = session.user.id
                 account?.handle = session.user.handle
                 account?.name = session.user.name
                 save()
@@ -153,7 +202,27 @@ final class AccountStore {
         Keychain.write(data, for: Self.keychainKey)
     }
 
-    func signOut() {
+    /// Deletes the account on the server, then forgets it here. Apple wants a
+    /// fresh authorization code with this so the Sign in with Apple link is
+    /// revoked as well.
+    func deleteAccount(authorizationCode: String?) async -> String? {
+        guard let token = account?.sessionToken else { return "Sign in first." }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await TalkAPI.deleteAccount(authorizationCode: authorizationCode, token: token)
+            signOut(unregisteringPush: false)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func signOut(unregisteringPush: Bool = true) {
+        if unregisteringPush, let token = account?.sessionToken {
+            // Without this the phone would keep getting this person's pushes.
+            Task { await PushRegistrar.shared.unregister(sessionToken: token) }
+        }
         account = nil
         Keychain.delete(Self.keychainKey)
     }

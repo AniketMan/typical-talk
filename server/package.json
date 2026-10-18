@@ -1,0 +1,12 @@
+{
+  "name": "typical-talk-server",
+  "private": true,
+  "scripts": {
+    "check": "tsc --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "*",
+    "typescript": "^5.9.0"
+  }
+}
