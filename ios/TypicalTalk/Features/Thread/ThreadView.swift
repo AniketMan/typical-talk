@@ -11,6 +11,8 @@ struct ThreadView: View {
     @State private var player = ThreadPlayer()
     @State private var selected: Message.ID?
     @State private var showTranscript = false
+    @State private var transcriptHeight: CGFloat = 120
+    @State private var dragStartHeight: CGFloat?
     @State private var showRecorder = false
     @State private var autoplayOnLoad = false
     @State private var showReport = false
@@ -43,7 +45,7 @@ struct ThreadView: View {
                     )
 
                     if showTranscript {
-                        TranscriptPane(message: current, player: player)
+                        TranscriptPane(message: current, player: player, height: $transcriptHeight)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
@@ -51,6 +53,18 @@ struct ThreadView: View {
                 // Above the system tab bar, inside this screen, so the strip
                 // and the reply button slide away with the thread.
                 .safeAreaBar(edge: .bottom, spacing: 8) { bottomBar(talk) }
+            } else if let talk {
+                // Connected, but nobody has recorded anything yet. This is how
+                // a talk looks right after an invite is accepted.
+                ContentUnavailableView {
+                    Label("No takes yet", systemImage: "video.badge.plus")
+                } description: {
+                    Text("Record the first take for \(talk.title). They watch it whenever they can.")
+                } actions: {
+                    Button("Record a take", systemImage: "video.fill") { beginReply() }
+                        .buttonStyle(.glassProminent)
+                        .controlSize(.large)
+                }
             } else {
                 ContentUnavailableView("Talk not found", systemImage: "questionmark.circle")
             }
@@ -105,10 +119,12 @@ struct ThreadView: View {
         .onAppear { ThreadContext.shared.openTalk = talkID }
         // The tab bar's circle becomes Reply while this thread is open.
         .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
-        .task(id: talkID) { await store.ensureTranscripts(in: talkID) }
+        .task(id: talkID, priority: .utility) { await store.ensureTranscripts(in: talkID) }
+        .onChange(of: player.isPlaying) { _, playing in ThreadContext.shared.isPlaying = playing }
         .onDisappear {
             saveProgress()
             player.teardown()
+            ThreadContext.shared.isPlaying = false
             if ThreadContext.shared.openTalk == talkID { ThreadContext.shared.openTalk = nil }
         }
     }
@@ -255,21 +271,23 @@ struct ThreadView: View {
                 HStack(spacing: 8) {
                     ForEach(talk.messages.reversed()) { message in
                         Button { select(message) } label: {
-                            VStack(spacing: 4) {
+                            VStack(spacing: 5) {
                                 TakeThumbnail(
                                     message: message,
-                                    size: .small,
+                                    size: .strip,
                                     isActive: message.id == current?.id,
-                                    showsDuration: false
+                                    showsDuration: false,
+                                    resumeFraction: message.id == current?.id ? nil : resumeFraction(of: message)
                                 )
                                 Text(message.author.isYou ? "You" : message.author.name)
-                                    .font(.system(size: 10))
+                                    .font(.caption2.weight(.medium))
                                     .foregroundStyle(
                                         message.id == current?.id ? .white : Palette.secondaryText
                                     )
                                     .lineLimit(1)
                             }
-                            .frame(width: 54)
+                            .frame(width: 72)
+                            .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                         .id(message.id)
@@ -291,6 +309,14 @@ struct ThreadView: View {
         }
     }
 
+    /// How far through a take you got, if you stopped partway. Drives the ring
+    /// that tells you tapping it will resume rather than start over.
+    private func resumeFraction(of message: Message) -> Double? {
+        let at = store.resumePosition(for: message.id)
+        guard at > 0, message.duration > 0 else { return nil }
+        return min(at / message.duration, 0.99)
+    }
+
     private func scroll(_ proxy: ScrollViewProxy, to id: Message.ID?, animated: Bool = false) {
         guard let id else { return }
         if animated {
@@ -307,12 +333,48 @@ struct ThreadView: View {
 struct TranscriptPane: View {
     let message: Message
     @Bindable var player: ThreadPlayer
+    /// Drag the handle up to make this taller than the video, down to shrink it.
+    @Binding var height: CGFloat
+    @State private var dragStart: CGFloat?
+
+    private static let range: ClosedRange<CGFloat> = 80...560
 
     private var activeID: TranscriptSegment.ID? {
         message.transcript.last { $0.start <= player.currentTime }?.id
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            handle
+            lines
+        }
+        .frame(height: height)
+        .background(Palette.raised)
+    }
+
+    private var handle: some View {
+        Capsule()
+            .fill(.white.opacity(0.3))
+            .frame(width: 40, height: 5)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .contentShape(.rect)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let start = dragStart ?? height
+                        dragStart = start
+                        // Dragging up grows the pane.
+                        height = min(max(start - value.translation.height, Self.range.lowerBound), Self.range.upperBound)
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            .accessibilityLabel("Resize transcript")
+            .accessibilityAdjustableAction { direction in
+                height = min(max(height + (direction == .increment ? 60 : -60), Self.range.lowerBound), Self.range.upperBound)
+            }
+    }
+
+    private var lines: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -345,8 +407,6 @@ struct TranscriptPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             }
-            .frame(maxHeight: 190)
-            .background(Palette.raised)
             .onChange(of: activeID) { _, id in
                 guard let id else { return }
                 withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
@@ -390,7 +450,7 @@ struct AddPeopleView: View {
                         if selected.contains(person.id) { selected.remove(person.id) } else { selected.insert(person.id) }
                     } label: {
                         HStack(spacing: 12) {
-                            Monogram(text: person.initials, size: Scale.Avatar.medium)
+                            AvatarView(person: person, size: Scale.Avatar.medium)
                             Text(person.name).font(.subheadline.weight(.semibold))
                             Spacer()
                             Image(systemName: selected.contains(person.id) ? "checkmark.circle.fill" : "circle")

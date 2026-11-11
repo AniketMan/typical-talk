@@ -47,7 +47,7 @@ struct NewTalkView: View {
                             ForEach(people) { person in
                                 Button { toggle(person) } label: {
                                     HStack(spacing: 12) {
-                                        Monogram(text: person.initials, size: Scale.Avatar.medium)
+                                        AvatarView(person: person, size: Scale.Avatar.medium)
                                         Text(person.name).font(.subheadline.weight(.semibold))
                                         Spacer()
                                         Image(systemName: selected.contains(person.id) ? "checkmark.circle.fill" : "circle")

@@ -33,9 +33,11 @@ struct TakePlayerView: View {
         // Runs again when the file arrives, so a take that was still
         // downloading when it was selected starts as soon as it lands.
         .task(id: "\(message.id.uuidString)-\(message.fileName ?? "")") { await start() }
-        .onChange(of: player.currentTime) { _, now in
+        // Once a second is plenty to remember where you were; doing it on
+        // every tick of the clock was needless work during playback.
+        .onChange(of: Int(player.currentTime)) { _, _ in
             guard player.isPlaying else { return }
-            store.saveProgress(now, for: message.id, duration: length)
+            store.saveProgress(player.currentTime, for: message.id, duration: length)
         }
         .onDisappear { feedbackTask?.cancel() }
     }
@@ -169,7 +171,7 @@ struct TakePlayerView: View {
             Slider(
                 value: Binding(
                     get: { min(player.currentTime, max(length, 0.01)) },
-                    set: { player.seek(to: $0) }
+                    set: { player.isScrubbing ? player.scrub(to: $0) : player.seek(to: $0) }
                 ),
                 in: 0...max(length, 0.01),
                 label: { Text("Position") },
@@ -177,6 +179,9 @@ struct TakePlayerView: View {
                     SliderTickContentForEach(message.chapters.dropFirst().map(\.start), id: \.self) { start in
                         SliderTick(start)
                     }
+                },
+                onEditingChanged: { editing in
+                    if editing { player.beginScrub() } else { player.endScrub() }
                 }
             )
             .disabled(!player.hasMedia)

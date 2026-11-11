@@ -17,6 +17,11 @@ final class ThreadPlayer {
     /// Until then the video stays hidden, so the first frame is never shown
     /// before jumping to where you left off.
     private(set) var isSettled = false
+    /// True while a finger is on the scrubber. The playback clock must not
+    /// write the position then, or it drags the knob back to where the video
+    /// still is: the bounce you saw.
+    private(set) var isScrubbing = false
+    private var resumeAfterScrub = false
     var rate: Float = 1.0
 
     private var observer: Any?
@@ -75,11 +80,12 @@ final class ThreadPlayer {
     private func tick(_ seconds: Double) {
         guard let item = player?.currentItem else { return }
         let total = item.duration.seconds
-        if total.isFinite, total > 0 { duration = total }
+        // Only when it changes: every write wakes everything watching it.
+        if total.isFinite, total > 0, total != duration { duration = total }
 
         // Until the take has settled at its resume point, keep showing that
         // point instead of the player's pre-seek time of zero.
-        guard isSettled else { return }
+        guard isSettled, !isScrubbing else { return }
         currentTime = seconds
 
         // The player stops itself at the end; reflect that in the UI.
@@ -136,7 +142,57 @@ final class ThreadPlayer {
         currentTime = target
     }
 
+    // MARK: - Scrubbing
+
+    /// A finger went down on the scrubber: stop the clock driving the knob,
+    /// and pause so the picture can follow the finger.
+    func beginScrub() {
+        guard let player, player.currentItem != nil else { return }
+        isScrubbing = true
+        resumeAfterScrub = isPlaying
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+        }
+    }
+
+    /// While dragging: the knob goes exactly where the finger is, and the
+    /// picture follows to the nearest frame it can reach quickly.
+    func scrub(to seconds: Double) {
+        guard let player else { return }
+        let target = max(0, min(seconds, duration > 0 ? duration : seconds))
+        currentTime = target
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .positiveInfinity,
+            toleranceAfter: .positiveInfinity
+        )
+    }
+
+    /// Finger up: land on the exact frame, then hand the knob back to the
+    /// clock and carry on playing if it was playing.
+    func endScrub() {
+        guard let player, isScrubbing else { return }
+        player.seek(
+            to: CMTime(seconds: currentTime, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isScrubbing = false
+                if self.resumeAfterScrub {
+                    self.resumeAfterScrub = false
+                    self.player?.playImmediately(atRate: self.rate)
+                    self.isPlaying = true
+                }
+            }
+        }
+    }
+
     private func reset() {
+        isScrubbing = false
+        resumeAfterScrub = false
         isSettled = false
         isPlaying = false
         currentTime = 0

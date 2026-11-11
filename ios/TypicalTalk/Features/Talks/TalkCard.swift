@@ -11,7 +11,11 @@ struct TalkCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Monogram(text: talk.initials, size: Scale.Avatar.medium)
+            if let person = talk.counterpart {
+                AvatarView(person: person, size: Scale.Avatar.medium)
+            } else {
+                Monogram(text: talk.initials, size: Scale.Avatar.medium)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {

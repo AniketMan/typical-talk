@@ -84,6 +84,10 @@ export default {
       }
 
       if (method === "PUT" && path === "/v1/me/handle") return claimHandle(request, env, user);
+      if (method === "PUT" && path === "/v1/me/avatar") return setAvatar(request, env, user);
+      if (method === "DELETE" && path === "/v1/me/avatar") return removeAvatar(env, user);
+      const avatar = path.match(/^\/v1\/users\/([\w-]+)\/avatar$/);
+      if (method === "GET" && avatar) return getAvatar(avatar[1], env, user);
       if (method === "GET" && path === "/v1/users") return findByHandle(url, env, user);
 
       if (method === "PUT" && path === "/v1/devices") return registerDevice(request, env, user);
@@ -175,10 +179,10 @@ async function startSession(request: Request, env: AppEnv, ctx: ExecutionContext
   if (banned) return fail(403, "This account has been suspended.");
 
   const existing = await env.DB.prepare(
-    "SELECT id, name, email FROM users WHERE apple_user_id = ?"
+    "SELECT id, name, email, avatar_version AS avatarVersion FROM users WHERE apple_user_id = ?"
   )
     .bind(appleUserID)
-    .first<{ id: string; name: string; email: string | null }>();
+    .first<{ id: string; name: string; email: string | null; avatarVersion: number | null }>();
 
   let user: User;
   if (existing) {
@@ -248,7 +252,9 @@ async function authenticate(request: Request, env: Env): Promise<User | null> {
   }
   // Tokens issued before expiry existed are treated as expired.
   if (typeof exp !== "number" || exp < now()) return null;
-  const user = await env.DB.prepare("SELECT id, name, email FROM users WHERE id = ?")
+  const user = await env.DB.prepare(
+    "SELECT id, name, email, avatar_version AS avatarVersion FROM users WHERE id = ?"
+  )
     .bind(sub)
     .first<User>();
   if (!user) return null;
@@ -265,6 +271,59 @@ async function sign(value: string, secret: string): Promise<string> {
   );
   const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   return encodeBase64URL(String.fromCharCode(...new Uint8Array(mac)));
+}
+
+// MARK: - Profile photo
+
+const MAX_AVATAR_BYTES = 512 * 1024;
+
+/** The phone sends a square JPEG; anything else is refused. */
+async function setAvatar(request: Request, env: Env, user: User): Promise<Response> {
+  if (!(await withinLimit(env, "avatar", user.id, 10, 3_600_000))) return tooMany();
+
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (!declared) return fail(411, "Send the photo with a length.");
+  if (declared > MAX_AVATAR_BYTES) return fail(413, "That photo is too large.");
+
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.length > MAX_AVATAR_BYTES) return fail(413, "That photo is too large.");
+  // JPEG files start FF D8 FF.
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+    return fail(415, "Photos must be JPEG.");
+  }
+
+  await env.TAKES.put(`avatars/${user.id}.jpg`, bytes);
+  const version = now();
+  await env.DB.prepare("UPDATE users SET avatar_version = ? WHERE id = ?").bind(version, user.id).run();
+  return json({ avatarVersion: version });
+}
+
+async function removeAvatar(env: Env, user: User): Promise<Response> {
+  await env.TAKES.delete(`avatars/${user.id}.jpg`);
+  await env.DB.prepare("UPDATE users SET avatar_version = NULL WHERE id = ?").bind(user.id).run();
+  return json({ ok: true });
+}
+
+/** Only you and people you already talk to can see a photo. */
+async function getAvatar(rawID: string, env: Env, user: User): Promise<Response> {
+  const checked = checkID(rawID);
+  if (!checked.value) return fail(404, "No photo.");
+  const id = checked.value;
+
+  if (id !== user.id) {
+    if (!(await connected(user.id, id, env)) || (await blockedBetween(user.id, id, env))) {
+      return fail(404, "No photo.");
+    }
+  }
+  const object = await env.TAKES.get(`avatars/${id}.jpg`);
+  if (!object) return fail(404, "No photo.");
+  return new Response(object.body, {
+    headers: {
+      "content-type": "image/jpeg",
+      // The phone asks with ?v=<version>, so a changed photo is a new URL.
+      "cache-control": "private, max-age=31536000",
+    },
+  });
 }
 
 // MARK: - Push registration
@@ -614,6 +673,7 @@ interface MemberRow {
   id: string;
   name: string;
   handle: string | null;
+  avatarVersion: number | null;
 }
 
 interface TakeRow {
@@ -664,7 +724,7 @@ async function listTalks(url: URL, env: Env, user: User): Promise<Response> {
 
   const statements = talks.results.flatMap((talk) => [
     env.DB.prepare(
-      `SELECT members.talk_id, users.id, users.name, handles.handle FROM members
+      `SELECT members.talk_id, users.id, users.name, handles.handle, users.avatar_version AS avatarVersion FROM members
        JOIN users ON users.id = members.user_id
        LEFT JOIN handles ON handles.user_id = users.id
        WHERE members.talk_id = ?`
@@ -700,7 +760,7 @@ async function listTalks(url: URL, env: Env, user: User): Promise<Response> {
       title: talk.title,
       isGroup,
       createdAt: talk.created_at,
-      members: members.map(({ id, name, handle }) => ({ id, name, handle })),
+      members: members.map(({ id, name, handle, avatarVersion }) => ({ id, name, handle, avatarVersion })),
       takes: takes
         .filter((take) => !blocked.has(take.author_id))
         .map((take) => ({

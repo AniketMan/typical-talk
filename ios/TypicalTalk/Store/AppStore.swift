@@ -62,7 +62,8 @@ final class AppStore: TransferDelegate {
         Person(
             id: account?.serverUUID ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
             name: account?.account?.name ?? "You",
-            isYou: true
+            isYou: true,
+            avatarVersion: account?.account?.avatarVersion
         )
     }
 
@@ -173,6 +174,7 @@ final class AppStore: TransferDelegate {
         lastSyncFailed = false
         loadedSnapshotFor = nil
         PushRegistrar.shared.setBadge(0)
+        AvatarCache.clear()
     }
 
     // MARK: - Sync
@@ -216,7 +218,9 @@ final class AppStore: TransferDelegate {
             present.insert(talkID)
 
             let members = remote.members.compactMap { member -> Person? in
-                UUID(uuidString: member.id).map { Person(id: $0, name: member.name, isYou: $0 == myID) }
+                UUID(uuidString: member.id).map {
+                    Person(id: $0, name: member.name, isYou: $0 == myID, avatarVersion: member.avatarVersion)
+                }
             }
             var talk = known[talkID] ?? Talk(
                 id: talkID,
@@ -533,6 +537,10 @@ final class AppStore: TransferDelegate {
               transcribing.insert(messageID).inserted else { return }
         defer { transcribing.remove(messageID) }
 
+        // Transcription is heavy, and playback stutters if they overlap. Wait
+        // for the take being watched to stop.
+        while ThreadContext.shared.isPlaying { try? await Task.sleep(for: .seconds(1)) }
+
         let duration = talks[t].messages[m].duration
         let segments = await Transcriber.segments(for: url)
         guard !segments.isEmpty else { return }
@@ -805,7 +813,7 @@ final class AppStore: TransferDelegate {
     /// should not start several speech recognisers.
     private func queueTranscription(_ messageID: Message.ID, in talkID: Talk.ID) {
         let previous = transcriptionChain
-        transcriptionChain = Task {
+        transcriptionChain = Task(priority: .utility) {
             await previous?.value
             await ensureTranscript(for: messageID, in: talkID)
         }

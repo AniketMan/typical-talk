@@ -109,7 +109,7 @@ struct FindFriendsView: View {
 
             if let found {
                 HStack(spacing: 12) {
-                    Monogram(text: initials(found.name), size: Scale.Avatar.small)
+                    AvatarView(person: Person(id: UUID(uuidString: found.id) ?? UUID(), name: found.name), size: Scale.Avatar.small)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(found.name).font(.subheadline.weight(.semibold))
                         Text("@\(found.handle ?? search)")
@@ -192,7 +192,7 @@ struct FindFriendsView: View {
 
             ForEach(knownPeople) { person in
                 HStack(spacing: 12) {
-                    Monogram(text: person.initials, size: Scale.Avatar.small)
+                    AvatarView(person: person, size: Scale.Avatar.small)
                     Text(person.name).font(.subheadline.weight(.semibold))
                     Spacer()
                 }

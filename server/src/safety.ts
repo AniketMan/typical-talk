@@ -174,6 +174,14 @@ export async function admin(
     return json({ ok: true });
   }
 
+  // Removes someone's profile photo, leaving the rest of the account alone.
+  const photo = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/avatar\/remove$/);
+  if (request.method === "POST" && photo) {
+    await env.TAKES.delete(`avatars/${photo[1]}.jpg`);
+    await env.DB.prepare("UPDATE users SET avatar_version = NULL WHERE id = ?").bind(photo[1]).run();
+    return json({ ok: true });
+  }
+
   // Erases the person and stops the same Apple ID from signing up again.
   const ban = path.match(/^\/admin\/users\/([0-9a-f-]{36})\/ban$/);
   if (request.method === "POST" && ban) {

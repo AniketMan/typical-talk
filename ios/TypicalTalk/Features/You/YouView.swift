@@ -1,4 +1,5 @@
 import AuthenticationServices
+import PhotosUI
 import SwiftUI
 
 /// Profile and every app setting. There is no Settings tab by design.
@@ -10,6 +11,7 @@ struct YouView: View {
     @State private var showStorage = false
     @State private var showBlocked = false
     @State private var showDelete = false
+    @State private var photoItem: PhotosPickerItem?
 
     private var storageUsed: String {
         let bytes = store.talks
@@ -21,6 +23,18 @@ struct YouView: View {
         return ByteCountFormatStyle(style: .file).format(Int64(bytes))
     }
 
+    /// Crops the picked photo to a square and uploads it, so everyone you
+    /// talk to sees it.
+    private func setPhoto(_ item: PhotosPickerItem) async {
+        defer { photoItem = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let jpeg = AvatarCache.squareJPEG(from: data) else {
+            nameError = "That photo could not be opened."
+            return
+        }
+        nameError = await account.setAvatar(jpeg)
+    }
+
     var body: some View {
         @Bindable var store = store
 
@@ -28,7 +42,24 @@ struct YouView: View {
             List {
                 Section {
                     HStack(spacing: 14) {
-                        Monogram(text: String(account.displayName.prefix(1)).uppercased(), size: Scale.Avatar.profile)
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            AvatarView(person: store.me, size: Scale.Avatar.profile)
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: "camera.fill")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 24, height: 24)
+                                        .background(Palette.record, in: .circle)
+                                        .overlay(Circle().strokeBorder(Palette.canvas, lineWidth: 2))
+                                        .offset(x: 3, y: 3)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Change profile photo")
+                        .onChange(of: photoItem) { _, item in
+                            guard let item else { return }
+                            Task { await setPhoto(item) }
+                        }
                         VStack(alignment: .leading, spacing: 4) {
                             // Apple sends a name only on first sign-in, so it
                             // has to be editable rather than fixed forever.
@@ -45,6 +76,14 @@ struct YouView: View {
                             Text(nameError ?? account.account?.email ?? "Signed in with Apple")
                                 .font(.caption)
                                 .foregroundStyle(nameError == nil ? Palette.secondaryText : Palette.record)
+                            if account.account?.avatarVersion != nil {
+                                Button("Remove photo") {
+                                    Task { nameError = await account.removeAvatar() }
+                                }
+                                .font(.caption.weight(.semibold))
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Palette.record)
+                            }
                         }
                     }
                     .padding(.vertical, 6)

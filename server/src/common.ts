@@ -21,6 +21,7 @@ export interface User {
   name: string;
   email: string | null;
   handle?: string | null;
+  avatarVersion?: number | null;
 }
 
 /** How long a take is kept on the server before the file is deleted. */

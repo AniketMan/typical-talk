@@ -76,6 +76,8 @@ export async function eraseUser(env: Env, userID: string): Promise<void> {
     if ((others?.n ?? 0) === 0) await destroyTalk(env, talk_id);
   }
 
+  await env.TAKES.delete(`avatars/${userID}.jpg`);
+
   await env.DB.batch([
     // The only reference to a user that does not cascade.
     env.DB.prepare("DELETE FROM invites WHERE redeemed_by = ?").bind(userID),

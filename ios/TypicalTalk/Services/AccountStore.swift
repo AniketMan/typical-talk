@@ -20,6 +20,7 @@ final class AccountStore {
         /// Our own id for this person, which is what the server and other
         /// phones know them by. Apple's `userID` above never leaves sign in.
         var serverID: String?
+        var avatarVersion: Int?
     }
 
     private(set) var account: Account?
@@ -68,7 +69,9 @@ final class AccountStore {
         guard let account else { return }
         let provider = ASAuthorizationAppleIDProvider()
         let state = try? await provider.credentialState(forUserID: account.userID)
-        if state == .revoked || state == .notFound { signOut() }
+        if state == .revoked || state == .notFound { signOut(); return }
+        // Picks up a photo or name changed on another phone.
+        try? await ensureProfile()
     }
 
     /// Fills in what an older sign in did not store, and notices a session
@@ -80,6 +83,7 @@ final class AccountStore {
             account?.serverID = user.id
             account?.name = user.name
             account?.handle = user.handle
+            account?.avatarVersion = user.avatarVersion
             save()
         } catch TalkAPI.Failure.unauthorized {
             sessionEnded()
@@ -140,6 +144,7 @@ final class AccountStore {
                 )
                 account?.sessionToken = session.token
                 account?.serverID = session.user.id
+                account?.avatarVersion = session.user.avatarVersion
                 account?.handle = session.user.handle
                 account?.name = session.user.name
                 save()
@@ -190,6 +195,32 @@ final class AccountStore {
         do {
             let updated = try await TalkAPI.updateName(trimmed, token: token)
             account?.name = updated.name
+            save()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Sets your profile photo from a square JPEG.
+    func setAvatar(_ jpeg: Data) async -> String? {
+        guard let token = account?.sessionToken else { return "Sign in first." }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            account?.avatarVersion = try await TalkAPI.uploadAvatar(jpeg, token: token)
+            save()
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func removeAvatar() async -> String? {
+        guard let token = account?.sessionToken else { return "Sign in first." }
+        do {
+            try await TalkAPI.deleteAvatar(token: token)
+            account?.avatarVersion = nil
             save()
             return nil
         } catch {

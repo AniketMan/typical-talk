@@ -32,13 +32,19 @@ struct TakeThumbnail: View {
     var size: Size = .medium
     var isActive: Bool = false
     var showsDuration: Bool = true
+    /// Set when you stopped partway: shows a progress ring so it reads as
+    /// "resume" and not "play".
+    var resumeFraction: Double?
 
     enum Size {
         case small, medium, large
+        /// The row of takes along the bottom of a thread, sized for a thumb.
+        case strip
 
         var side: CGFloat {
             switch self {
             case .small: 46
+            case .strip: 64
             case .medium: 56
             case .large: 72
             }
@@ -54,10 +60,14 @@ struct TakeThumbnail: View {
             } else {
                 Palette.canvas
             }
-            Image(systemName: message.isVoiceOnly ? "waveform" : "play.fill")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.92))
-                .shadow(radius: 2)
+            if let resumeFraction {
+                ResumeRing(fraction: resumeFraction, size: size == .strip ? 30 : 22)
+            } else {
+                Image(systemName: message.isVoiceOnly ? "waveform" : "play.fill")
+                    .font(size == .strip ? .footnote : .caption2)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .shadow(radius: 2)
+            }
         }
         .frame(width: size.side, height: size.side)
         .clipShape(RoundedRectangle(cornerRadius: Scale.Radius.thumbnail, style: .continuous))
@@ -106,6 +116,31 @@ struct TakeThumbnail: View {
                 poster = await VideoPoster.firstFrame(of: url)
             }
         }
-        .accessibilityLabel("\(message.author.name), \(timecode(message.duration))\(message.watched ? ", watched" : ", new")")
+        .accessibilityLabel("\(message.author.name), \(timecode(message.duration))\(resumeFraction != nil ? ", resumes where you left off" : (message.watched ? ", watched" : ", new"))")
+    }
+}
+
+
+/// A play triangle inside a ring that fills as far as you got, so a take you
+/// stopped partway does not look like one you have not started.
+struct ResumeRing: View {
+    let fraction: Double
+    var size: CGFloat = 30
+
+    var body: some View {
+        ZStack {
+            Circle().fill(.black.opacity(0.45))
+            Circle().strokeBorder(.white.opacity(0.35), lineWidth: 2.5)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(Palette.record, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .padding(1.25)
+            Image(systemName: "play.fill")
+                .font(.system(size: size * 0.36))
+                .foregroundStyle(.white)
+                .offset(x: size * 0.02)
+        }
+        .frame(width: size, height: size)
     }
 }

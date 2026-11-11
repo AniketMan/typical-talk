@@ -4,15 +4,18 @@ struct Person: Identifiable, Hashable, Sendable, Codable {
     let id: UUID
     var name: String
     var isYou: Bool = false
+    /// Changes whenever the person picks a new photo; nil when they have none.
+    var avatarVersion: Int?
 
     var initials: String {
         name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased()
     }
 
-    init(id: UUID = UUID(), name: String, isYou: Bool = false) {
+    init(id: UUID = UUID(), name: String, isYou: Bool = false, avatarVersion: Int? = nil) {
         self.id = id
         self.name = name
         self.isYou = isYou
+        self.avatarVersion = avatarVersion
     }
 }
 
@@ -128,6 +131,8 @@ struct Talk: Identifiable, Hashable, Sendable, Codable {
     var createdAt: Date = .now
 
     var isGroup: Bool { isGroupTalk || members.count > 2 }
+    /// The other person in a one to one talk, whose photo stands for it.
+    var counterpart: Person? { isGroup ? nil : members.first { !$0.isYou } }
     var latest: Message? { messages.first }
     var unreadCount: Int { messages.filter { !$0.watched && !$0.author.isYou }.count }
     var hasUnread: Bool { unreadCount > 0 }

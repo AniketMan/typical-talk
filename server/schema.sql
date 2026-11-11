@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT,
   created_at    INTEGER NOT NULL,
   apple_refresh_token TEXT,                 -- to revoke at deletion
-  is_seed       INTEGER NOT NULL DEFAULT 0
+  is_seed       INTEGER NOT NULL DEFAULT 0,
+  avatar_version INTEGER                    -- null when there is no photo
 );
 
 -- Handles are how someone finds you on purpose: unique, lower case, and

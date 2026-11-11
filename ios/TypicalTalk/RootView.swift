@@ -155,6 +155,11 @@ struct RootView: View {
             // Debug only: run the safety and group actions without tapping.
             let me = store.me
             let others = store.talks.flatMap(\.members).filter { $0.id != me.id }
+            if environment["TT_DEBUG_CAPTIONS"] == "1" { store.alwaysShowCaptions = true }
+            if let fraction = environment["TT_DEBUG_RESUME"].flatMap(Double.init),
+               let talk = store.talks.first(where: { $0.title.contains(environment["TT_DEBUG_OPEN"] ?? "") }) {
+                for message in talk.messages { store.saveProgress(message.duration * fraction, for: message.id, duration: message.duration) }
+            }
             switch environment["TT_DEBUG_ACTION"] {
             case "group":
                 let result = await store.createGroup(with: Array(Set(others)), title: "Test Crew")
@@ -169,6 +174,9 @@ struct RootView: View {
             case "newtalk":
                 showNewTalk = true
             default: break
+            }
+            if let name = environment["TT_DEBUG_OPEN"], let match = store.talks.first(where: { $0.title.contains(name) }) {
+                TalksNavigation.shared.open = match.id
             }
             if ProcessInfo.processInfo.arguments.contains("thread:first"), let first = store.talks.first {
                 TalksNavigation.shared.open = first.id

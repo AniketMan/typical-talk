@@ -23,6 +23,7 @@ enum TalkAPI {
         var name: String
         var email: String?
         var handle: String?
+        var avatarVersion: Int?
     }
 
     struct Session: Codable {
@@ -39,6 +40,7 @@ enum TalkAPI {
         let id: String
         let name: String
         let handle: String?
+        let avatarVersion: Int?
     }
 
     struct RemoteTake: Codable {
@@ -147,6 +149,45 @@ enum TalkAPI {
         let _: Ack = try await send(
             "/v1/me", method: "DELETE", body: Body(authorizationCode: authorizationCode), token: token
         )
+    }
+
+    // MARK: - Profile photo
+
+    /// Uploads a square JPEG and returns its version.
+    static func uploadAvatar(_ jpeg: Data, token: String) async throws -> Int {
+        struct Done: Decodable { let avatarVersion: Int }
+        var request = URLRequest(url: base.appending(path: "/v1/me/avatar"))
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await URLSession.shared.upload(for: request, from: jpeg) } catch { throw Failure.offline }
+        guard let http = response as? HTTPURLResponse else { throw Failure.offline }
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 401 { throw Failure.unauthorized }
+            let message = (try? JSONDecoder().decode(ServerError.self, from: data))?.error
+            throw Failure.server(message ?? "Something went wrong (\(http.statusCode)).")
+        }
+        return try JSONDecoder().decode(Done.self, from: data).avatarVersion
+    }
+
+    static func deleteAvatar(token: String) async throws {
+        let _: Ack = try await send("/v1/me/avatar", method: "DELETE", token: token)
+    }
+
+    /// Someone's photo, or nil if they have none or you may not see it.
+    static func avatarData(for userID: String, version: Int, token: String) async -> Data? {
+        var components = URLComponents(
+            url: base.appending(path: "/v1/users/\(userID.lowercased())/avatar"), resolvingAgainstBaseURL: false
+        )!
+        components.queryItems = [URLQueryItem(name: "v", value: String(version))]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return data
     }
 
     // MARK: - Friends
