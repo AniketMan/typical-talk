@@ -73,7 +73,7 @@ struct TakePlayerView: View {
     private var media: some View {
         if let avPlayer = player.player {
             // Aspect fit, so the take is always shown at its real shape.
-            PlayerSurface(player: avPlayer)
+            PlayerSurface(player: avPlayer, pictureInPicture: player)
                 .opacity(player.isSettled ? 1 : 0)
                 .animation(.easeOut(duration: 0.18), value: player.isSettled)
                 .allowsHitTesting(false)
@@ -124,6 +124,21 @@ struct TakePlayerView: View {
                     get: { Double(player.rate) },
                     set: { player.setRate(Float($0)) }
                 ))
+
+                if player.canPictureInPicture || player.isPictureInPictureActive {
+                    Button {
+                        player.togglePictureInPicture()
+                    } label: {
+                        Image(systemName: player.isPictureInPictureActive ? "pip.exit" : "pip.enter")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.record)
+                            .frame(width: 38, height: 38)
+                            .contentShape(.circle)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel(player.isPictureInPictureActive ? "Stop Picture in Picture" : "Picture in Picture")
+                }
 
                 Button {
                     showFullScreen = true

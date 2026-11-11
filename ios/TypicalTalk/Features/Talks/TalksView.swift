@@ -6,7 +6,6 @@ struct TalksView: View {
     @State private var showNotifications = false
     @State private var navigation = TalksNavigation.shared
     @State private var path: [Talk.ID] = []
-    @State private var pendingDelete: Talk?
     @State private var deleteError: String?
     @Namespace private var morph
 
@@ -51,9 +50,11 @@ struct TalksView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 9, leading: 16, bottom: 9, trailing: 16))
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // Swipe and tap Delete, or swipe all the way. No second
+                        // question: the swipe is the confirmation.
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
-                                pendingDelete = talk
+                                Task { deleteError = await store.leave(talk.id) }
                             } label: {
                                 Label(talk.isGroup ? "Leave" : "Delete", systemImage: "trash")
                             }
@@ -66,8 +67,8 @@ struct TalksView: View {
             .scrollEdgeEffectStyle(.soft, for: .top)
             .refreshable { await store.sync() }
             .background(Palette.canvas)
-            .navigationTitle("Talks")
-            .navigationSubtitle(store.lastSyncFailed ? "Offline, showing saved talks" : "")
+            .navigationTitle("Takes")
+            .navigationSubtitle(store.lastSyncFailed ? "Offline, showing saved takes" : "")
             .navigationDestination(for: Talk.ID.self) { id in
                 if store.talk(id: id) != nil {
                     ThreadView(talkID: id)
@@ -95,20 +96,6 @@ struct TalksView: View {
                 guard let id else { return }
                 path = [id]
                 navigation.open = nil
-            }
-            .confirmationDialog(
-                (pendingDelete?.isGroup ?? false) ? "Leave this group?" : "Delete this conversation?",
-                isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-                titleVisibility: .visible,
-                presenting: pendingDelete
-            ) { talk in
-                Button(talk.isGroup ? "Leave" : "Delete", role: .destructive) {
-                    Task { deleteError = await store.leave(talk.id) }
-                }
-            } message: { talk in
-                Text(talk.isGroup
-                     ? "You will stop getting takes from \(talk.title), and its takes are removed from your phone."
-                     : "The takes in your talk with \(talk.title) are removed from your phone.")
             }
             .alert("Couldn't do that", isPresented: Binding(
                 get: { deleteError != nil },
@@ -138,7 +125,7 @@ struct TalksView: View {
             } description: {
                 Text(filter == .unread
                      ? "You are caught up. Every take has been watched."
-                     : "Add a friend in the Friends tab, then start a talk with the plus button.")
+                     : "Add a friend in the Friends tab, then start a take with the plus button.")
             }
             .padding(.top, 40)
         }

@@ -10,6 +10,8 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<!-- Picture in Picture keeps a take playing outside the app. -->
+		<string>audio</string>
 	</array>
 	<!-- Lets a debug build talk to a server on this Mac. Does nothing for the
 	     real server, which is https. -->

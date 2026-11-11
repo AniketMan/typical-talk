@@ -39,7 +39,7 @@ struct NewTalkView: View {
                     ContentUnavailableView {
                         Label("No one here yet", systemImage: "person.2")
                     } description: {
-                        Text("Add someone from the Friends tab first, then start a talk with them.")
+                        Text("Add someone from the Friends tab first, then start a take with them.")
                     }
                 } else {
                     List {
@@ -91,7 +91,7 @@ struct NewTalkView: View {
                 }
             }
             #endif
-            .navigationTitle("New Talk")
+            .navigationTitle("New Take")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -109,7 +109,7 @@ struct NewTalkView: View {
                 if isWorking {
                     ProgressView()
                 } else {
-                    Text(selected.count > 1 ? "Start group" : "Start talk")
+                    Text(selected.count > 1 ? "Start group" : "Start take")
                 }
             }
             .frame(maxWidth: .infinity)

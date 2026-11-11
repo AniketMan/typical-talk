@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import Observation
 import SwiftUI
 
@@ -22,6 +23,17 @@ final class ThreadPlayer {
     /// still is: the bounce you saw.
     private(set) var isScrubbing = false
     private var resumeAfterScrub = false
+
+    // MARK: Picture in Picture state
+
+    /// The talk this player belongs to, so tapping the floating window can
+    /// bring you back to it.
+    var talkID: Talk.ID?
+    private(set) var isPictureInPictureActive = false
+    private(set) var canPictureInPicture = false
+    private var pictureInPicture: AVPictureInPictureController?
+    private var pictureInPictureDelegate: PictureInPictureDelegate?
+    private var possibleObservation: NSKeyValueObservation?
     var rate: Float = 1.0
 
     private var observer: Any?
@@ -31,6 +43,10 @@ final class ThreadPlayer {
     /// Watches the item's readiness directly. The periodic time observer does
     /// not tick while paused, so it cannot be relied on to notice readiness.
     private var statusObservation: NSKeyValueObservation?
+    /// Follows what the player is really doing. The system pauses playback
+    /// itself (a call, leaving the app, headphones unplugged) and the play
+    /// button has to agree with it afterwards.
+    private var timeControlObservation: NSKeyValueObservation?
 
     var hasMedia: Bool { player?.currentItem != nil }
 
@@ -68,6 +84,13 @@ final class ThreadPlayer {
         let engine = AVPlayer()
         engine.actionAtItemEnd = .pause
         player = engine
+        timeControlObservation = engine.observe(\.timeControlStatus, options: [.new]) { [weak self] engine, _ in
+            let playing = engine.timeControlStatus != .paused
+            Task { @MainActor in
+                guard let self, !self.isScrubbing, self.isPlaying != playing else { return }
+                self.isPlaying = playing
+            }
+        }
         observer = engine.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
             queue: .main
@@ -121,6 +144,7 @@ final class ThreadPlayer {
             player.pause()
         } else {
             if duration > 0, currentTime >= duration - 0.05 { seek(to: 0) }
+            AudioSession.preparePlayback()
             player.playImmediately(atRate: rate)
         }
         isPlaying.toggle()
@@ -140,6 +164,47 @@ final class ThreadPlayer {
             toleranceAfter: .zero
         )
         currentTime = target
+    }
+
+    // MARK: - Picture in Picture
+
+    /// Keeps the take playing in a floating window when you leave the
+    /// thread or the app. It also starts by itself if you leave the app
+    /// while a take is playing.
+    func attachPictureInPicture(to layer: AVPlayerLayer) {
+        guard AVPictureInPictureController.isPictureInPictureSupported(),
+              pictureInPicture == nil,
+              let controller = AVPictureInPictureController(playerLayer: layer) else { return }
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        let delegate = PictureInPictureDelegate(owner: self)
+        controller.delegate = delegate
+        pictureInPicture = controller
+        pictureInPictureDelegate = delegate
+        possibleObservation = controller.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] controller, _ in
+            let possible = controller.isPictureInPicturePossible
+            Task { @MainActor in self?.canPictureInPicture = possible }
+        }
+    }
+
+    func togglePictureInPicture() {
+        guard let pictureInPicture else { return }
+        if pictureInPicture.isPictureInPictureActive {
+            pictureInPicture.stopPictureInPicture()
+        } else {
+            AudioSession.preparePlayback()
+            if !isPlaying { togglePlay() }
+            pictureInPicture.startPictureInPicture()
+        }
+    }
+
+    fileprivate func pictureInPictureChanged(active: Bool) {
+        isPictureInPictureActive = active
+        // The thread was closed while the window floated. Once the window
+        // goes, nothing needs this player any more.
+        if !active, PictureInPictureKeeper.shared.kept === self {
+            PictureInPictureKeeper.shared.kept = nil
+            teardown()
+        }
     }
 
     // MARK: - Scrubbing
@@ -183,6 +248,7 @@ final class ThreadPlayer {
                 self.isScrubbing = false
                 if self.resumeAfterScrub {
                     self.resumeAfterScrub = false
+                    AudioSession.preparePlayback()
                     self.player?.playImmediately(atRate: self.rate)
                     self.isPlaying = true
                 }
@@ -202,7 +268,13 @@ final class ThreadPlayer {
 
     /// Called when the thread closes, not between takes.
     func teardown() {
+        possibleObservation = nil
+        pictureInPicture?.delegate = nil
+        pictureInPicture = nil
+        pictureInPictureDelegate = nil
+        isPictureInPictureActive = false
         statusObservation = nil
+        timeControlObservation = nil
         if let observer, let player { player.removeTimeObserver(observer) }
         observer = nil
         player?.pause()
@@ -210,5 +282,65 @@ final class ThreadPlayer {
         player = nil
         loadedURL = nil
         reset()
+    }
+}
+
+
+/// The app's audio, set for what is happening.
+///
+/// The camera switches the session to record when the recorder opens and
+/// leaves it there after it closes. Played back like that, a take can come out
+/// of the earpiece, quietly, or not at all. Playback puts it back.
+enum AudioSession {
+    static func preparePlayback() {
+        let session = AVAudioSession.sharedInstance()
+        guard session.category != .playback || session.mode != .moviePlayback else {
+            try? session.setActive(true)
+            return
+        }
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+    }
+}
+
+
+/// Holds a thread's player while its take floats in Picture in Picture after
+/// the thread itself has closed.
+@MainActor
+final class PictureInPictureKeeper {
+    static let shared = PictureInPictureKeeper()
+    var kept: ThreadPlayer?
+}
+
+/// AVKit's delegate, kept separate so ThreadPlayer can stay a plain
+/// observable class.
+private final class PictureInPictureDelegate: NSObject, AVPictureInPictureControllerDelegate {
+    weak var owner: ThreadPlayer?
+
+    init(owner: ThreadPlayer) { self.owner = owner }
+
+    func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        let owner = self.owner
+        Task { @MainActor in owner?.pictureInPictureChanged(active: true) }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        let owner = self.owner
+        Task { @MainActor in owner?.pictureInPictureChanged(active: false) }
+    }
+
+    /// Tapping the window's return button takes you back to the thread.
+    func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+    ) {
+        nonisolated(unsafe) let finish = completionHandler
+        let owner = self.owner
+        Task { @MainActor in
+            if let talk = owner?.talkID, ThreadContext.shared.openTalk != talk {
+                IntentRouter.shared.openTalkID = talk
+            }
+            finish(true)
+        }
     }
 }

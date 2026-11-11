@@ -11,12 +11,16 @@ import UIKit
 /// the take is ready at the right position.
 struct PlayerSurface: UIViewRepresentable {
     let player: AVPlayer
+    /// Set on the thread's own surface only: Picture in Picture is attached to
+    /// one layer, and it should be the one inline in the thread.
+    var pictureInPicture: ThreadPlayer?
 
     func makeUIView(context: Context) -> LayerView {
         let view = LayerView()
         view.backgroundColor = .black
         view.playerLayer.videoGravity = .resizeAspect
         view.playerLayer.player = player
+        pictureInPicture?.attachPictureInPicture(to: view.playerLayer)
         return view
     }
 

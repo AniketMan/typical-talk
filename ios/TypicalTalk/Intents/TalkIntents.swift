@@ -21,12 +21,12 @@ final class IntentRouter {
 struct SendTakeIntent: AppIntent {
     static let title: LocalizedStringResource = "Send a Take"
     static let description = IntentDescription(
-        "Opens the recorder aimed at a talk, ready to record and send.",
+        "Opens the recorder aimed at a conversation, ready to record and send.",
         categoryName: "Recording"
     )
     static var openAppWhenRun: Bool { true }
 
-    @Parameter(title: "Talk") var talk: TalkEntity?
+    @Parameter(title: "Conversation") var talk: TalkEntity?
     @Parameter(title: "To") var recipients: [TalkPersonEntity]?
 
     static var parameterSummary: some ParameterSummary {
@@ -60,11 +60,11 @@ struct SendTakeIntent: AppIntent {
 struct MarkTakesWatchedIntent: AppIntent {
     static let title: LocalizedStringResource = "Mark Takes Watched"
     static let description = IntentDescription(
-        "Marks every take in a talk as watched.",
+        "Marks every take in a conversation as watched.",
         categoryName: "Playback"
     )
 
-    @Parameter(title: "Talk") var talk: TalkEntity
+    @Parameter(title: "Conversation") var talk: TalkEntity
 
     static var parameterSummary: some ParameterSummary {
         Summary("Mark \(\.$talk) as watched")
@@ -86,12 +86,12 @@ struct MarkTakesWatchedIntent: AppIntent {
 struct PlayNewTakesIntent: AppIntent {
     static let title: LocalizedStringResource = "Play New Takes"
     static let description = IntentDescription(
-        "Opens the talk with unwatched takes and starts playing.",
+        "Opens the conversation with unwatched takes and starts playing.",
         categoryName: "Playback"
     )
     static var openAppWhenRun: Bool { true }
 
-    @Parameter(title: "Talk") var talk: TalkEntity?
+    @Parameter(title: "Conversation") var talk: TalkEntity?
 
     static var parameterSummary: some ParameterSummary {
         Summary("Play new takes in \(\.$talk)")
@@ -119,9 +119,9 @@ struct PlayNewTakesIntent: AppIntent {
 
 /// "Search my talks for the car." Runs against on-device transcripts.
 struct SearchTalksIntent: AppIntent {
-    static let title: LocalizedStringResource = "Search Talks"
+    static let title: LocalizedStringResource = "Search Takes"
     static let description = IntentDescription(
-        "Searches everything said in your talks, using transcripts stored on this device.",
+        "Searches everything said in your takes, using transcripts stored on this device.",
         categoryName: "Archive"
     )
     static var openAppWhenRun: Bool { true }
@@ -130,7 +130,7 @@ struct SearchTalksIntent: AppIntent {
     var query: String
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Search talks for \(\.$query)")
+        Summary("Search takes for \(\.$query)")
     }
 
     @MainActor
@@ -141,7 +141,7 @@ struct SearchTalksIntent: AppIntent {
         IntentRouter.shared.showArchive = true
 
         guard let best = matches.first else {
-            return .result(dialog: IntentDialog("Nothing in your talks mentions \(query)."))
+            return .result(dialog: IntentDialog("Nothing in your takes mentions \(query)."))
         }
         return .result(dialog: IntentDialog(
             "\(matches.count) matches. \(best.message.author.name) said: \(best.segment.text)"
@@ -230,7 +230,7 @@ struct TypicalTalkShortcuts: AppShortcutsProvider {
                 "Search \(.applicationName)",
                 "Find it in \(.applicationName)"
             ],
-            shortTitle: "Search Talks",
+            shortTitle: "Search Takes",
             systemImageName: "magnifyingglass"
         )
     }

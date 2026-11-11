@@ -69,6 +69,8 @@ export async function sendPush(env: Env, userIDs: string[], push: Push): Promise
           sound: "default",
           badge,
           "thread-id": push.talkID,
+          // Adds the Reply action. Only pushes about a new take carry it.
+          ...(push.takeID ? { category: "NEW_TAKE" } : {}),
           // Wakes the app briefly so the take is already downloaded when the
           // notification is opened.
           "content-available": 1,

@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		BB0000000000000000000001 /* TypicalTakeWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TypicalTakeWidget;
+			sourceTree = "<group>";
+		};
 		AA0000000000000000000001 /* TypicalTalk */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = TypicalTalk;
@@ -14,7 +19,42 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
+/* Begin PBXBuildFile section */
+		BB000000000000000000000D /* TypicalTakeWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000005 /* TypicalTakeWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BB000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA000000000000000000000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BB0000000000000000000006;
+			remoteInfo = TypicalTakeWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BB000000000000000000000C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BB000000000000000000000D /* TypicalTakeWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFrameworksBuildPhase section */
+		BB0000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -29,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* TypicalTalk */,
+				BB0000000000000000000001 /* TypicalTakeWidget */,
 				AA0000000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -37,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000005 /* TypicalTalk.app */,
+				BB0000000000000000000005 /* TypicalTakeWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -51,10 +93,12 @@
 				AA0000000000000000000008 /* Sources */,
 				AA0000000000000000000002 /* Frameworks */,
 				AA0000000000000000000009 /* Resources */,
+				BB000000000000000000000C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BB000000000000000000000B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0000000000000000000001 /* TypicalTalk */,
@@ -65,6 +109,28 @@
 			productName = TypicalTalk;
 			productReference = AA0000000000000000000005 /* TypicalTalk.app */;
 			productType = "com.apple.product-type.application";
+		};
+		BB0000000000000000000006 /* TypicalTakeWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB0000000000000000000007 /* Build configuration list for PBXNativeTarget "TypicalTakeWidget" */;
+			buildPhases = (
+				BB0000000000000000000003 /* Sources */,
+				BB0000000000000000000002 /* Frameworks */,
+				BB0000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BB0000000000000000000001 /* TypicalTakeWidget */,
+			);
+			name = TypicalTakeWidget;
+			packageProductDependencies = (
+			);
+			productName = TypicalTakeWidget;
+			productReference = BB0000000000000000000005 /* TypicalTakeWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -77,6 +143,9 @@
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					AA0000000000000000000006 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					BB0000000000000000000006 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
@@ -96,11 +165,19 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000006 /* TypicalTalk */,
+				BB0000000000000000000006 /* TypicalTakeWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		BB0000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -111,6 +188,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		BB0000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000008 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -120,7 +204,16 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		BB000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BB0000000000000000000006 /* TypicalTakeWidget */;
+			targetProxy = BB000000000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXFileReference section */
+		BB0000000000000000000005 /* TypicalTakeWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TypicalTakeWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000005 /* TypicalTalk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TypicalTalk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -176,17 +269,17 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = TypicalTalk/TypicalTalk.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Typical Talk";
+				INFOPLIST_KEY_CFBundleDisplayName = "Typical Take";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Typical Talk uses the camera so you can record video takes for your talks.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Typical Talk uses the microphone to record the audio of your takes.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Typical Talk saves takes you choose to keep to your photo library.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Typical Talk transcribes your takes on device so you can search and read them later.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Typical Take uses the camera so you can record video takes for your conversations.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Typical Take uses the microphone to record the audio of your takes.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Typical Take saves takes you choose to keep to your photo library.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Typical Take transcribes your takes on device so you can search and read them later.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -212,17 +305,17 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = TypicalTalk/TypicalTalk.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Typical Talk";
+				INFOPLIST_KEY_CFBundleDisplayName = "Typical Take";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Typical Talk uses the camera so you can record video takes for your talks.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Typical Talk uses the microphone to record the audio of your takes.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Typical Talk saves takes you choose to keep to your photo library.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Typical Talk transcribes your takes on device so you can search and read them later.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Typical Take uses the camera so you can record video takes for your conversations.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Typical Take uses the microphone to record the audio of your takes.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Typical Take saves takes you choose to keep to your photo library.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Typical Take transcribes your takes on device so you can search and read them later.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -235,6 +328,54 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.typicaltalk.TypicalTalk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		BB0000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 9;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Widget-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Typical Take";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.typicaltalk.TypicalTalk.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		BB0000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 9;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Widget-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Typical Take";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.typicaltalk.TypicalTalk.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -258,6 +399,15 @@
 			buildConfigurations = (
 				AA000000000000000000000E /* Debug */,
 				AA000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB0000000000000000000007 /* Build configuration list for PBXNativeTarget "TypicalTakeWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB0000000000000000000008 /* Debug */,
+				BB0000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -531,12 +531,12 @@ async function startTalk(
   if (!(await withinLimit(env, "startTalk", user.id, 30, 3_600_000))) return tooMany();
 
   const body = await readJSON<{ userID?: string; userIDs?: unknown; title?: unknown }>(request);
-  if (!body) return fail(400, "Say who the talk is with.");
+  if (!body) return fail(400, "Say who this is with.");
 
   if (Array.isArray(body.userIDs)) return startGroup(body.userIDs, body.title, env, ctx, user);
 
   const checked = checkID(body.userID);
-  if (!checked.value) return fail(400, "Say who the talk is with.");
+  if (!checked.value) return fail(400, "Say who this is with.");
   if (checked.value === user.id) return fail(400, "That is you.");
 
   // Only people who published a handle can be started with by id, or people
@@ -624,12 +624,12 @@ async function addMember(
 ): Promise<Response> {
   if (!(await withinLimit(env, "addMember", user.id, 30, 3_600_000))) return tooMany();
   const talk = checkID(rawTalk);
-  if (!talk.value || !(await isMember(talk.value, user.id, env))) return fail(403, "Not your talk.");
+  if (!talk.value || !(await isMember(talk.value, user.id, env))) return fail(403, "Not your conversation.");
 
   const row = await env.DB.prepare("SELECT title, created_by FROM talks WHERE id = ?")
     .bind(talk.value)
     .first<{ title: string | null; created_by: string | null }>();
-  if (!row?.created_by) return fail(400, "Start a group to talk with more than one person.");
+  if (!row?.created_by) return fail(400, "Start a group to include more than one person.");
 
   const body = await readJSON<{ userID?: string }>(request);
   const target = checkID(body?.userID);
@@ -662,7 +662,7 @@ async function addMember(
 /** Leaving removes you; the last person out takes the talk and its files with them. */
 async function leaveTalk(rawTalk: string, env: Env, user: User): Promise<Response> {
   const talk = checkID(rawTalk);
-  if (!talk.value || !(await isMember(talk.value, user.id, env))) return fail(403, "Not your talk.");
+  if (!talk.value || !(await isMember(talk.value, user.id, env))) return fail(403, "Not your conversation.");
 
   await env.DB.prepare("DELETE FROM members WHERE talk_id = ? AND user_id = ?")
     .bind(talk.value, user.id)
@@ -804,7 +804,7 @@ async function uploadTake(
   const talkID = talk.value;
   const takeID = take.value;
 
-  if (!(await isMember(talkID, user.id, env))) return fail(403, "Not your talk.");
+  if (!(await isMember(talkID, user.id, env))) return fail(403, "Not your conversation.");
 
   const prior = await env.DB.prepare("SELECT author_id, sent_at FROM takes WHERE id = ?")
     .bind(takeID)
@@ -827,7 +827,7 @@ async function uploadTake(
   if (!group?.created_by) {
     for (const member of members.results) {
       if (member.user_id !== user.id && (await blockedBetween(user.id, member.user_id, env))) {
-        return fail(403, "You can't send takes in this talk.");
+        return fail(403, "You can't send takes in this conversation.");
       }
     }
   }
@@ -877,7 +877,7 @@ async function uploadTake(
     .first<{ title: string | null }>();
   ctx.waitUntil(
     sendPush(env, recipients, {
-      title: group?.created_by ? (talkTitle?.title ?? "Group talk") : user.name,
+      title: group?.created_by ? (talkTitle?.title ?? "Group") : user.name,
       body: group?.created_by
         ? `${user.name} sent a ${voiceOnly ? "voice take" : "take"}`
         : voiceOnly
@@ -912,7 +912,7 @@ async function downloadTake(
       deleted_at: number | null;
     }>();
   if (!take) return fail(404, "No such take.");
-  if (!(await isMember(take.talk_id, user.id, env))) return fail(403, "Not your talk.");
+  if (!(await isMember(take.talk_id, user.id, env))) return fail(403, "Not your conversation.");
   if (take.expired_at || take.deleted_at) return fail(410, "That take is no longer stored.");
   if (take.author_id !== user.id && (await blockedBetween(user.id, take.author_id, env))) {
     return fail(404, "No such take.");
@@ -969,7 +969,7 @@ async function markWatched(rawTake: string, env: Env, user: User): Promise<Respo
     .bind(checked.value)
     .first<{ talk_id: string; author_id: string }>();
   if (!take) return fail(404, "No such take.");
-  if (!(await isMember(take.talk_id, user.id, env))) return fail(403, "Not your talk.");
+  if (!(await isMember(take.talk_id, user.id, env))) return fail(403, "Not your conversation.");
   // Watching your own take is not a receipt.
   if (take.author_id === user.id) return json({ ok: true });
 
@@ -998,14 +998,14 @@ async function invitePage(raw: string, env: Env): Promise<Response> {
   const who = escapeHTML(invite?.name ?? "Someone");
   const page = `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Join ${who} on Typical Talk</title>
+<title>Join ${who} on Typical Take</title>
 <style>body{background:#08090c;color:#fff;font:17px -apple-system,system-ui;display:grid;
 place-items:center;height:100dvh;margin:0;text-align:center;padding:24px}
 a{display:inline-block;margin-top:24px;background:#ff536f;color:#fff;text-decoration:none;
 padding:14px 28px;border-radius:999px;font-weight:600}</style></head>
-<body><div><h1>${who} invited you to Typical Talk</h1>
+<body><div><h1>${who} invited you to Typical Take</h1>
 <p>Async video messages. Record a take, send it, they watch when they can.</p>
-<a href="typicaltalk://invite/${encodeURIComponent(code)}">Open in Typical Talk</a></div></body></html>`;
+<a href="typicaltalk://invite/${encodeURIComponent(code)}">Open in Typical Take</a></div></body></html>`;
 
   return new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

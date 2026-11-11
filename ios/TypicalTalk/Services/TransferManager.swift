@@ -140,16 +140,16 @@ final class TransferManager: NSObject, @unchecked Sendable {
             if (error as NSError).code == NSURLErrorCancelled { return nil }
             return .retryable("No connection.")
         }
-        guard let status else { return .retryable("No answer from Typical Talk.") }
+        guard let status else { return .retryable("No answer from Typical Take.") }
         if (200..<300).contains(status) { return .success }
         if status == 401 { return .unauthorized }
 
         let message = body
             .flatMap { try? JSONDecoder().decode([String: String].self, from: $0)["error"] }
         if status == 408 || status == 429 || status >= 500 {
-            return .retryable(message ?? "Typical Talk is busy. Trying again shortly.")
+            return .retryable(message ?? "Typical Take is busy. Trying again shortly.")
         }
-        return .permanent(message ?? "Typical Talk refused this take (\(status)).")
+        return .permanent(message ?? "Typical Take refused this take (\(status)).")
     }
 }
 

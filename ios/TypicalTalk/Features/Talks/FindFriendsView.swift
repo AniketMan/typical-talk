@@ -117,7 +117,7 @@ struct FindFriendsView: View {
                             .foregroundStyle(Palette.secondaryText)
                     }
                     Spacer()
-                    Button("Start a talk") { Task { await startTalk(with: found) } }
+                    Button("Start a take") { Task { await startTalk(with: found) } }
                         .buttonStyle(.glassProminent)
                         .font(.caption.weight(.semibold))
                         .disabled(isBusy)
@@ -186,7 +186,7 @@ struct FindFriendsView: View {
 
     private var people: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("On Typical Talk")
+            Text("On Typical Take")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Palette.secondaryText)
 
@@ -227,7 +227,7 @@ struct FindFriendsView: View {
         guard let id = UUID(uuidString: user.id) else { return }
         let (talk, problem) = await store.openTalk(with: Person(id: id, name: user.name))
         if talk != nil {
-            searchNote = "Talk started with \(user.name). It is in Talks."
+            searchNote = "Started with \(user.name). It is in Takes."
             found = nil
             search = ""
         } else {
@@ -251,7 +251,7 @@ struct FindFriendsView: View {
                 code: inviteCode.trimmingCharacters(in: .whitespaces),
                 token: token
             )
-            redeemNote = "You are connected. The talk is in Talks."
+            redeemNote = "You are connected. It is in Takes."
             inviteCode = ""
             await store.sync()
         } catch {

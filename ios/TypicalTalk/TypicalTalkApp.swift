@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftUI
 
 @main
@@ -32,12 +33,24 @@ struct TypicalTalkApp: App {
             }
             .animation(.snappy(duration: 0.35), value: account.isSignedIn)
             .onOpenURL { url in
-                guard url.scheme == "typicaltalk", url.host == "invite" else { return }
+                guard url.scheme == "typicaltalk" else { return }
+                // The widget links straight to a conversation.
+                if url.host == "talk", let talk = UUID(uuidString: url.lastPathComponent) {
+                    IntentRouter.shared.openTalkID = talk
+                    return
+                }
+                guard url.host == "invite" else { return }
                 let code = url.lastPathComponent
                 Task {
                     inviteResult = await account.redeem(inviteCode: code)
                     await store.sync()
                 }
+            }
+            // A Spotlight result opens the conversation it came from.
+            .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                      let talk = SpotlightIndex.talkID(from: identifier) else { return }
+                IntentRouter.shared.openTalkID = talk
             }
             .alert("Invite", isPresented: .constant(inviteResult != nil)) {
                 Button("OK") { inviteResult = nil }

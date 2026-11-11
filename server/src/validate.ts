@@ -11,12 +11,12 @@
 const RESERVED_HANDLES = new Set([
   "admin", "administrator", "root", "superuser", "sudo", "system", "sysadmin",
   "support", "help", "helpdesk", "security", "moderator", "mod", "staff",
-  "team", "official", "verified", "typicaltalk", "typical_talk", "typical",
+  "team", "official", "verified", "typicaltalk", "typical_talk", "typicaltake", "typical_take", "typical",
   "apple", "appstore", "billing", "payments", "noreply", "no_reply", "postmaster",
   "abuse", "legal", "privacy", "info", "contact", "about", "settings", "account",
   "login", "signin", "signup", "register", "password", "me", "you", "null",
   "undefined", "anonymous", "everyone", "all", "api", "www", "app", "invite",
-  "invites", "talk", "talks", "user", "users", "test", "demo",
+  "invites", "talk", "talks", "take", "takes", "user", "users", "test", "demo",
 ]);
 
 /** Invisible or direction-changing characters, used to disguise text. */

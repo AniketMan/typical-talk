@@ -20,8 +20,8 @@ enum TalkIntentError: Error, CustomLocalizedStringResourceConvertible {
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
-        case .notReady: "Typical Talk is still starting up."
-        case .noSuchTalk: "I could not find that talk."
+        case .notReady: "Typical Take is still starting up."
+        case .noSuchTalk: "I could not find that conversation."
         case .nothingToPlay: "There is nothing new to play there."
         }
     }
@@ -71,7 +71,7 @@ struct TalkPersonQuery: EntityQuery {
 
 /// How a thread can be described, for requests like "unread talks".
 enum TalkAttribute: String, AppEnum {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Talk Attribute"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Conversation Attribute"
 
     case unread
     case read
@@ -94,7 +94,7 @@ struct TakeEntity: AppEntity {
     @Property(title: "Watched") var isRead: Bool
     @Property(title: "Reaction") var reaction: String?
     @Property(title: "Kind") var messageType: TakeKind
-    @Property(title: "Talk") var conversation: TalkEntity
+    @Property(title: "Conversation") var conversation: TalkEntity
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Take"
 
@@ -160,7 +160,7 @@ struct TakeQuery: EntityQuery, EntityStringQuery {
 /// A thread, conforming to Apple's conversation schema so "open my talk with
 /// Sofia" resolves without the user learning our wording.
 struct TalkEntity: AppEntity {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Talk"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Conversation"
 
     let id: String
     @Property(title: "Name") var conversationName: String?

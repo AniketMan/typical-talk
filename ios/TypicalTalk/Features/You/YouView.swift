@@ -127,7 +127,7 @@ struct YouView: View {
                     Button("Sign out", role: .destructive) { account.signOut() }
                     Button("Delete account", role: .destructive) { showDelete = true }
                 } footer: {
-                    Text("Deleting removes your takes, your talks and your account from Typical Talk for good.")
+                    Text("Deleting removes your takes, your conversations and your account from Typical Take for good.")
                 }
                 .listRowBackground(Palette.raised)
 
@@ -276,7 +276,7 @@ struct DeleteAccountView: View {
             Text("Delete your account?")
                 .font(.title3.weight(.bold))
 
-            Text("Your takes, your talks and your account are removed from Typical Talk for good. Other people keep the takes they already received from you only until they delete them. This cannot be undone.")
+            Text("Your takes, your conversations and your account are removed from Typical Take for good. Other people keep the takes they already received from you only until they delete them. This cannot be undone.")
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondaryText)
                 .multilineTextAlignment(.center)

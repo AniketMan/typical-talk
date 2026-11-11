@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        Self.registerCategories()
         return true
     }
 
@@ -91,10 +92,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// now so it is already on the phone when the notification is opened.
     func application(
         _ application: UIApplication,
-        didReceiveRemoteNotification userInfo: [AnyHashable: Any]
-    ) async -> UIBackgroundFetchResult {
-        await IntentBridge.store?.sync()
-        return .newData
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        nonisolated(unsafe) let finish = completionHandler
+        Task { @MainActor in
+            await IntentBridge.store?.sync()
+            finish(.newData)
+        }
     }
 
     func application(
@@ -109,27 +114,65 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Notifications
 
+    /// The category on new-take pushes, which adds a Reply action. Reply
+    /// opens the app straight into the recorder for that talk.
+    static let newTakeCategory = "NEW_TAKE"
+    static let replyAction = "REPLY"
+
+    static func registerCategories() {
+        let reply = UNNotificationAction(
+            identifier: replyAction,
+            title: "Reply with a take",
+            options: [.foreground],
+            icon: UNNotificationActionIcon(systemImageName: "video.fill")
+        )
+        let category = UNNotificationCategory(
+            identifier: newTakeCategory,
+            actions: [reply],
+            intentIdentifiers: [],
+            options: []
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+    }
+
+    // These use completion handlers on purpose. The async versions hand
+    // control back to UIKit from a background thread, and UIKit aborts when
+    // that happens: that was the crash when a notification was tapped.
+
     /// In the foreground a banner is shown, unless you are already looking at
     /// the thread it is about.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
         let talk = (notification.request.content.userInfo["talkID"] as? String).flatMap(UUID.init(uuidString:))
-        let viewing = await MainActor.run { talk != nil && ThreadContext.shared.openTalk == talk }
-        await IntentBridge.store?.sync()
-        return viewing ? [] : [.banner, .sound, .badge]
+        nonisolated(unsafe) let finish = completionHandler
+        Task { @MainActor in
+            let viewing = talk != nil && ThreadContext.shared.openTalk == talk
+            finish(viewing ? [] : [.banner, .sound, .badge])
+            await IntentBridge.store?.sync()
+        }
     }
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        guard let id = (response.notification.request.content.userInfo["talkID"] as? String)
-            .flatMap(UUID.init(uuidString:)) else { return }
-        // A talk this phone has not heard of yet has to be fetched before it
-        // can be opened.
-        await IntentBridge.store?.sync()
-        await MainActor.run { IntentRouter.shared.openTalkID = id }
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let talk = (response.notification.request.content.userInfo["talkID"] as? String)
+            .flatMap(UUID.init(uuidString:))
+        let wantsReply = response.actionIdentifier == Self.replyAction
+        nonisolated(unsafe) let finish = completionHandler
+        Task { @MainActor in
+            // Tell the system straight away, on the main thread, then do the
+            // work. Nothing here is allowed to delay or move the completion.
+            finish()
+            guard let talk else { return }
+            // A talk this phone has not heard of yet has to be fetched first.
+            if IntentBridge.store?.talk(id: talk) == nil { await IntentBridge.store?.sync() }
+            IntentRouter.shared.openTalkID = talk
+            if wantsReply { DraftRecorder.shared.open(for: talk) }
+        }
     }
 }

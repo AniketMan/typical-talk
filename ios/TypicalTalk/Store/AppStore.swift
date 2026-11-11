@@ -150,6 +150,8 @@ final class AppStore: TransferDelegate {
             autoplayNewTakes: autoplayNewTakes,
             notificationsEnabled: notificationsEnabled
         )
+        SpotlightIndex.update(talks)
+        WidgetSnapshot.publish(talks, token: token, userID: account?.account?.serverID)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         let url = Self.stateURL
         Task.detached(priority: .utility) {
@@ -183,6 +185,8 @@ final class AppStore: TransferDelegate {
         PushRegistrar.shared.setBadge(0)
         AvatarCache.clear()
         DraftRecorder.shared.reset()
+        SpotlightIndex.clear()
+        WidgetSnapshot.clear()
     }
 
     // MARK: - Sync

@@ -38,14 +38,23 @@ struct ThreadView: View {
     var body: some View {
         withDialogs(screen)
         .task { showTranscript = store.alwaysShowCaptions }
-        .onAppear { ThreadContext.shared.openTalk = talkID }
+        .onAppear {
+            ThreadContext.shared.openTalk = talkID
+            player.talkID = talkID
+        }
         // The tab bar's circle becomes Reply while this thread is open.
         .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
         .task(id: talkID, priority: .utility) { await store.ensureTranscripts(in: talkID) }
         .onChange(of: player.isPlaying) { _, playing in ThreadContext.shared.isPlaying = playing }
         .onDisappear {
             saveProgress()
-            player.teardown()
+            // A take floating in Picture in Picture keeps playing after the
+            // thread closes; its player is released when the window goes.
+            if player.isPictureInPictureActive {
+                PictureInPictureKeeper.shared.kept = player
+            } else {
+                player.teardown()
+            }
             ThreadContext.shared.isPlaying = false
             if ThreadContext.shared.openTalk == talkID { ThreadContext.shared.openTalk = nil }
         }
@@ -85,11 +94,11 @@ struct ThreadView: View {
                         .controlSize(.large)
                 }
             } else {
-                ContentUnavailableView("Talk not found", systemImage: "questionmark.circle")
+                ContentUnavailableView("Not found", systemImage: "questionmark.circle")
             }
         }
         .background(Palette.canvas)
-        .navigationTitle(talk?.title ?? "Talk")
+        .navigationTitle(talk?.title ?? "Take")
         .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { threadMenu }
@@ -143,8 +152,8 @@ struct ThreadView: View {
             }
         } message: { message in
             Text(message.author.isYou
-                 ? "It disappears from everyone's phone in this talk."
-                 : "Only from this phone. \(message.author.name) and anyone else in the talk still have it.")
+                 ? "It disappears from everyone's phone in this conversation."
+                 : "Only from this phone. \(message.author.name) and anyone else in the conversation still have it.")
         }
         .overlay(alignment: .top) {
             if let toast {
@@ -172,9 +181,6 @@ struct ThreadView: View {
             Menu {
                 if let talk, talk.isGroup {
                     Button("Add people", systemImage: "person.badge.plus") { showAddPeople = true }
-                }
-                if let current, current.fileName != nil {
-                    Button("Save to Photos", systemImage: "square.and.arrow.down") { save(current) }
                 }
                 if let current, !current.author.isYou {
                     Button("Report this take", systemImage: "flag") {

@@ -115,6 +115,9 @@ final class DraftRecorder {
     func recorderClosed() async {
         await pause()
         camera.stop()
+        // Hand the audio back to playback, or the next take you watch can
+        // come out of the earpiece.
+        AudioSession.preparePlayback()
         if segments.isEmpty {
             talkID = nil
             save()

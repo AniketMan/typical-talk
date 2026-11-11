@@ -18,7 +18,7 @@ struct SignInView: View {
                     .frame(width: 84, height: 84)
                     .background(Palette.record, in: .circle)
 
-                Text("Typical Talk")
+                Text("Typical Take")
                     .font(.largeTitle.weight(.bold))
 
                 Text("Record a take, send it, and they watch whenever they can. Transcripts stay on your phone.")

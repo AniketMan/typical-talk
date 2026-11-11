@@ -78,7 +78,7 @@ struct RecorderSheet: View {
                     Palette.raised.overlay {
                         VStack(spacing: 10) {
                             WaveformPlaceholder()
-                            Text("No camera on this device. You can still record a voice-only Talk.")
+                            Text("No camera on this device. You can still record a voice-only take.")
                                 .font(.caption)
                                 .multilineTextAlignment(.center)
                                 .foregroundStyle(Palette.secondaryText)

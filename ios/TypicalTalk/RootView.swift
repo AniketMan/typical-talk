@@ -26,7 +26,7 @@ struct RootView: View {
 
     private var inThread: Bool { thread.openTalk != nil }
 
-    private var actionTitle: String { draft.hasDraft ? "Resume" : (inThread ? "Reply" : "New Talk") }
+    private var actionTitle: String { draft.hasDraft ? "Resume" : (inThread ? "Reply" : "New Take") }
     private var actionSymbol: String { draft.hasDraft ? "record.circle" : (inThread ? "video.fill" : "plus") }
 
     /// Selecting the circle runs its action instead of switching tabs.
@@ -75,7 +75,7 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: tabSelection) {
-            Tab("Talks", systemImage: "bubble.left.and.bubble.right", value: AppTab.talks) {
+            Tab("Takes", systemImage: "bubble.left.and.bubble.right", value: AppTab.talks) {
                 TalksView()
             }
 

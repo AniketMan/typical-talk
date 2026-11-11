@@ -102,7 +102,7 @@ enum TalkAPI {
         var errorDescription: String? {
             switch self {
             case .server(let message): message
-            case .offline: "Could not reach Typical Talk."
+            case .offline: "Could not reach Typical Take."
             case .unauthorized: "Your session ended. Sign in again."
             }
         }

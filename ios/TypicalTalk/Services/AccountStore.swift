@@ -158,7 +158,7 @@ final class AccountStore {
 
     /// Claims or changes the handle people can find you by.
     func claimHandle(_ handle: String) async -> String? {
-        guard let token = account?.sessionToken else { return "Not signed in to Typical Talk." }
+        guard let token = account?.sessionToken else { return "Not signed in to Typical Take." }
         isWorking = true
         defer { isWorking = false }
         do {
@@ -179,7 +179,7 @@ final class AccountStore {
         defer { isWorking = false }
         do {
             _ = try await TalkAPI.redeemInvite(code: trimmed, token: token)
-            return "You are connected. The talk is in Talks."
+            return "You are connected. It is in Takes."
         } catch {
             return error.localizedDescription
         }
