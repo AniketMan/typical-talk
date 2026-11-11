@@ -256,6 +256,14 @@ enum TalkAPI {
         let _: Ack = try await send("/v1/takes/\(takeID.lowercased())", method: "DELETE", token: token)
     }
 
+    /// Opens a take sent through Messages, filing it into the conversation
+    /// with its sender. Nil when you sent it yourself.
+    static func openShare(code: String, token: String) async throws -> String? {
+        struct Opened: Decodable { let talkID: String? }
+        let result: Opened = try await send("/v1/shares/\(code)/open", method: "POST", token: token)
+        return result.talkID
+    }
+
     static func markWatched(take takeID: String, token: String) async throws {
         let _: Ack = try await send("/v1/takes/\(takeID.lowercased())/watched", method: "POST", token: token)
     }

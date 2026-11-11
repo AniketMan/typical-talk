@@ -34,6 +34,7 @@ import {
   isMember,
   memberCount,
 } from "./data";
+import { createShare, openShare, sharePage, shareVideo } from "./shares";
 import { admin, blockUser, deleteAccount, fileReport, listBlocks, unblockUser } from "./safety";
 import {
   checkDeviceToken,
@@ -60,6 +61,13 @@ export default {
       }
 
       if (path.startsWith("/admin/")) return admin(request, path, env);
+
+      // Share links from the Messages app open in browsers too, so these two
+      // are public; the unguessable code is what grants access.
+      const sharePath = path.match(/^\/s\/([a-z2-9]+)(\/video)?$/);
+      if (method === "GET" && sharePath) {
+        return sharePath[2] ? shareVideo(request, sharePath[1], env) : sharePage(sharePath[1], env);
+      }
 
       if (method === "POST" && path === "/v1/session") {
         return startSession(request, env, ctx);
@@ -99,6 +107,10 @@ export default {
       const unblock = path.match(/^\/v1\/blocks\/([\w-]+)$/);
       if (method === "DELETE" && unblock) return unblockUser(unblock[1], env, user);
       if (method === "POST" && path === "/v1/reports") return fileReport(request, env, user);
+
+      if (method === "POST" && path === "/v1/shares") return createShare(request, env, user);
+      const openShareMatch = path.match(/^\/v1\/shares\/([a-z2-9]+)\/open$/);
+      if (method === "POST" && openShareMatch) return openShare(openShareMatch[1], env, user, ensureTalk);
 
       if (method === "POST" && path === "/v1/invites") return createInvite(env, user);
       const redeem = path.match(/^\/v1\/invites\/([A-Za-z0-9]+)\/redeem$/);

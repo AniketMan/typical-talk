@@ -39,6 +39,19 @@ struct TypicalTalkApp: App {
                     IntentRouter.shared.openTalkID = talk
                     return
                 }
+                // A take sent through Messages: file it into the conversation
+                // with its sender, then open that.
+                if url.host == "share" {
+                    let code = url.lastPathComponent
+                    Task {
+                        if let talk = await store.openShared(code: code) {
+                            IntentRouter.shared.openTalkID = talk
+                        } else {
+                            inviteResult = "That take is no longer available."
+                        }
+                    }
+                    return
+                }
                 guard url.host == "invite" else { return }
                 let code = url.lastPathComponent
                 Task {

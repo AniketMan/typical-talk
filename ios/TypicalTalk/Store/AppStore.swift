@@ -771,6 +771,18 @@ final class AppStore: TransferDelegate {
         }
     }
 
+    /// A take someone sent through Messages. Returns the conversation it was
+    /// filed into, once the phone has it.
+    func openShared(code: String) async -> Talk.ID? {
+        guard let token else { return nil }
+        let raw: String?
+        do { raw = try await TalkAPI.openShare(code: code, token: token) } catch { return nil }
+        await sync()
+        // Your own take: nothing to file, just bring the app up.
+        guard let raw else { return talks.first?.id }
+        return UUID(uuidString: raw)
+    }
+
     // MARK: - One take
 
     /// Deletes one of your own takes for everyone in the talk.

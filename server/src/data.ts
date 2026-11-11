@@ -59,7 +59,9 @@ export async function destroyTalk(env: Env, talkID: string): Promise<void> {
  * place in every talk, and any talk that nobody else is in.
  */
 export async function eraseUser(env: Env, userID: string): Promise<void> {
-  const mine = await env.DB.prepare("SELECT storage_key FROM takes WHERE author_id = ?")
+  const mine = await env.DB.prepare(
+    "SELECT storage_key FROM takes WHERE author_id = ?1 UNION SELECT storage_key FROM shares WHERE author_id = ?1"
+  )
     .bind(userID)
     .all<{ storage_key: string }>();
   await deleteFiles(env, mine.results.map((row) => row.storage_key));
@@ -104,6 +106,19 @@ export async function expireOldTakes(env: Env, nowMs: number): Promise<number> {
       )
     );
     expired += batch.results.length;
+  }
+
+  // Message links last as long as takes do.
+  const shares = await env.DB.prepare(
+    "SELECT id, storage_key FROM shares WHERE created_at < ? AND expired_at IS NULL LIMIT 500"
+  )
+    .bind(cutoff)
+    .all<{ id: string; storage_key: string }>();
+  if (shares.results.length > 0) {
+    await deleteFiles(env, shares.results.map((row) => row.storage_key));
+    await env.DB.batch(
+      shares.results.map((row) => env.DB.prepare("UPDATE shares SET expired_at = ? WHERE id = ?").bind(nowMs, row.id))
+    );
   }
   return expired;
 }
