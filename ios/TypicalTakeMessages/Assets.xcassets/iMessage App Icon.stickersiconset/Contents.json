@@ -16,15 +16,13 @@
       "filename": "icon-60x45@2x-iphone.png",
       "idiom": "iphone",
       "size": "60x45",
-      "scale": "2x",
-      "platform": "ios"
+      "scale": "2x"
     },
     {
       "filename": "icon-60x45@3x-iphone.png",
       "idiom": "iphone",
       "size": "60x45",
-      "scale": "3x",
-      "platform": "ios"
+      "scale": "3x"
     },
     {
       "filename": "icon-29x29@2x-ipad.png",
@@ -36,15 +34,13 @@
       "filename": "icon-67x50@2x-ipad.png",
       "idiom": "ipad",
       "size": "67x50",
-      "scale": "2x",
-      "platform": "ios"
+      "scale": "2x"
     },
     {
       "filename": "icon-74x55@2x-ipad.png",
       "idiom": "ipad",
       "size": "74x55",
-      "scale": "2x",
-      "platform": "ios"
+      "scale": "2x"
     },
     {
       "filename": "icon-27x20@2x-universal.png",
