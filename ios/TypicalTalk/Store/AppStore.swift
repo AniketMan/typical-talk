@@ -43,6 +43,9 @@ final class AppStore: TransferDelegate {
     @ObservationIgnored private weak var account: AccountStore?
     @ObservationIgnored private var cursor: Double = 0
     @ObservationIgnored private var pendingWatched: Set<UUID> = []
+    /// Other people's takes removed from this phone only. Sync must not
+    /// bring them back.
+    @ObservationIgnored private var hiddenTakes: Set<UUID> = []
     @ObservationIgnored private var retries: [UUID: Int] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var transcriptionChain: Task<Void, Never>?
@@ -86,6 +89,7 @@ final class AppStore: TransferDelegate {
         var bookmarks: [Bookmark]
         var positions: [String: Double]
         var pendingWatched: [String]
+        var hiddenTakes: [String]?
         var clearedAt: Date?
         var alwaysShowCaptions: Bool
         var autoplayNewTakes: Bool
@@ -112,6 +116,7 @@ final class AppStore: TransferDelegate {
             UUID(uuidString: key).map { ($0, value) }
         })
         pendingWatched = Set(snapshot.pendingWatched.compactMap(UUID.init(uuidString:)))
+        hiddenTakes = Set((snapshot.hiddenTakes ?? []).compactMap(UUID.init(uuidString:)))
         notificationsClearedAt = snapshot.clearedAt
         alwaysShowCaptions = snapshot.alwaysShowCaptions
         autoplayNewTakes = snapshot.autoplayNewTakes
@@ -139,6 +144,7 @@ final class AppStore: TransferDelegate {
             bookmarks: bookmarks,
             positions: Dictionary(uniqueKeysWithValues: playbackPositions.map { ($0.key.uuidString, $0.value) }),
             pendingWatched: pendingWatched.map(\.uuidString),
+            hiddenTakes: hiddenTakes.map(\.uuidString),
             clearedAt: notificationsClearedAt,
             alwaysShowCaptions: alwaysShowCaptions,
             autoplayNewTakes: autoplayNewTakes,
@@ -164,6 +170,7 @@ final class AppStore: TransferDelegate {
         notifications = []
         playbackPositions = [:]
         pendingWatched = []
+        hiddenTakes = []
         retries = [:]
         uploadProgress = [:]
         downloadProgress = [:]
@@ -175,6 +182,7 @@ final class AppStore: TransferDelegate {
         loadedSnapshotFor = nil
         PushRegistrar.shared.setBadge(0)
         AvatarCache.clear()
+        DraftRecorder.shared.reset()
     }
 
     // MARK: - Sync
@@ -239,6 +247,15 @@ final class AppStore: TransferDelegate {
                       let authorID = UUID(uuidString: take.authorID) else { continue }
                 let sentAt = Date(timeIntervalSince1970: take.sentAt / 1000)
                 let watchers = take.watchedBy.compactMap(UUID.init(uuidString:))
+
+                // Taken back by its author, or removed from this phone by you.
+                if take.deleted == true || hiddenTakes.contains(takeID) {
+                    if let index = talk.messages.firstIndex(where: { $0.id == takeID }) {
+                        deleteFiles(of: [talk.messages[index]])
+                        talk.messages.remove(at: index)
+                    }
+                    continue
+                }
 
                 if let index = talk.messages.firstIndex(where: { $0.id == takeID }) {
                     talk.messages[index].watchedBy = watchers
@@ -537,9 +554,6 @@ final class AppStore: TransferDelegate {
               transcribing.insert(messageID).inserted else { return }
         defer { transcribing.remove(messageID) }
 
-        // Transcription is heavy, and playback stutters if they overlap. Wait
-        // for the take being watched to stop.
-        while ThreadContext.shared.isPlaying { try? await Task.sleep(for: .seconds(1)) }
 
         let duration = talks[t].messages[m].duration
         let segments = await Transcriber.segments(for: url)
@@ -751,6 +765,35 @@ final class AppStore: TransferDelegate {
         } catch {
             return error.localizedDescription
         }
+    }
+
+    // MARK: - One take
+
+    /// Deletes one of your own takes for everyone in the talk.
+    func deleteTake(_ message: Message, in talkID: Talk.ID) async -> String? {
+        guard message.author.isYou else { return nil }
+        // Never reached the server: there is nothing to take back there.
+        if message.delivery != .sent {
+            discard(message.id, in: talkID)
+            return nil
+        }
+        guard let token else { return "Sign in first." }
+        do {
+            try await TalkAPI.deleteTake(message.id.uuidString, token: token)
+        } catch {
+            return error.localizedDescription
+        }
+        discard(message.id, in: talkID)
+        return nil
+    }
+
+    /// Removes someone else's take from this phone. They and everyone else
+    /// still have it; it just will not come back here.
+    func hideTake(_ message: Message, in talkID: Talk.ID) {
+        hiddenTakes.insert(message.id)
+        pendingWatched.remove(message.id)
+        discard(message.id, in: talkID)
+        updateBadge()
     }
 
     // MARK: - Blocking and reporting

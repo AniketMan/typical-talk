@@ -18,6 +18,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Lets the camera draw Apple's reactions (hearts, balloons, fireworks)
+	     into takes, from the effects menu or hand gestures. -->
+	<key>NSCameraReactionEffectsEnabled</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS takes (
   voice_only  INTEGER NOT NULL DEFAULT 0,
   sent_at     INTEGER,                      -- null until the upload completes
   created_at  INTEGER NOT NULL,
-  expired_at  INTEGER                       -- file deleted at this time
+  expired_at  INTEGER,                      -- file deleted at this time
+  deleted_at  INTEGER                       -- deleted by its author
 );
 CREATE INDEX IF NOT EXISTS takes_by_talk ON takes(talk_id, sent_at);
 

@@ -8,12 +8,6 @@ enum AppTab: Hashable {
     case action
 }
 
-/// Wraps a thread id so the recorder can be presented with `sheet(item:)`,
-/// which guarantees the destination exists before the sheet is built.
-struct RecorderTarget: Identifiable {
-    let id: Talk.ID
-}
-
 /// Three tabs on the system tab bar, Talks, You and Archive, plus a detached
 /// circle at the trailing end, the way Music shows search.
 ///
@@ -26,11 +20,14 @@ struct RootView: View {
     @State private var selection: AppTab = Self.initialTab
     @State private var archiveQuery = ""
     @State private var router = IntentRouter.shared
-    @State private var recorderTarget: RecorderTarget?
+    @State private var draft = DraftRecorder.shared
     @State private var thread = ThreadContext.shared
     @State private var showNewTalk = false
 
     private var inThread: Bool { thread.openTalk != nil }
+
+    private var actionTitle: String { draft.hasDraft ? "Resume" : (inThread ? "Reply" : "New Talk") }
+    private var actionSymbol: String { draft.hasDraft ? "record.circle" : (inThread ? "video.fill" : "plus") }
 
     /// Selecting the circle runs its action instead of switching tabs.
     private var tabSelection: Binding<AppTab> {
@@ -41,7 +38,10 @@ struct RootView: View {
                     selection = next
                     return
                 }
-                if inThread {
+                // A draft waiting means this button carries on recording it.
+                if draft.hasDraft {
+                    draft.resume()
+                } else if inThread {
                     ThreadContext.shared.requestReply()
                 } else {
                     showNewTalk = true
@@ -100,36 +100,42 @@ struct RootView: View {
             // the bar as an ordinary item: it still changes job and still
             // never disappears.
             if #available(iOS 27.0, *) {
-                Tab(
-                    inThread ? "Reply" : "New Talk",
-                    systemImage: inThread ? "video.fill" : "plus",
-                    value: AppTab.action,
-                    role: .prominent
-                ) {
+                Tab(actionTitle, systemImage: actionSymbol, value: AppTab.action, role: .prominent) {
                     Color.clear
                 }
             } else {
-                Tab(
-                    inThread ? "Reply" : "New Talk",
-                    systemImage: inThread ? "video.fill" : "plus",
-                    value: AppTab.action
-                ) {
+                Tab(actionTitle, systemImage: actionSymbol, value: AppTab.action) {
                     Color.clear
                 }
             }
         }
         .tint(Palette.record)
-        .fullScreenCover(item: $recorderTarget) { target in
-            RecorderSheet(destination: target.id)
-        }
-        .sheet(isPresented: $showNewTalk) {
-            NewTalkView { id in recorderTarget = RecorderTarget(id: id) }
+        // One recorder for the whole app. A sheet, so it can be swiped down;
+        // doing that pauses it into a draft rather than losing it.
+        .sheet(isPresented: Binding(get: { draft.isPresented }, set: { draft.isPresented = $0 })) {
+            RecorderSheet()
                 .presentationBackground(Palette.canvas)
         }
+        .sheet(isPresented: $showNewTalk) {
+            NewTalkView { id in
+                // Let New Talk finish leaving before the recorder arrives.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(450))
+                    draft.open(for: id)
+                }
+            }
+            .presentationBackground(Palette.canvas)
+        }
+        .modifier(DraftAccessory(draft: draft))
         .background(Palette.canvas)
         .task {
             // Ask for push in its own task: the permission prompt waits for an
             // answer, and syncing must not.
+            #if DEBUG
+            // Against a local test server there is nothing to push from, and
+            // the permission alert would block what is being tested.
+            if ProcessInfo.processInfo.environment["TT_API_BASE"] != nil { return }
+            #endif
             if store.notificationsEnabled { await PushRegistrar.shared.enable() }
         }
         .task {
@@ -171,6 +177,20 @@ struct RootView: View {
                 }
             case "block":
                 if let person = others.first { print("TT_DEBUG block:", await store.block(person) as Any) }
+            case "draft", "draftsend":
+                // Two segments with a pause between, then close the recorder.
+                guard let talk = store.talks.first else { break }
+                for clip in (environment["TT_DEBUG_CLIPS"] ?? "").split(separator: ",") {
+                    draft.debugAddSegment(from: URL(fileURLWithPath: String(clip)), duration: 10, to: talk.id)
+                }
+                try? await Task.sleep(for: .seconds(1))
+                print("TT_DEBUG draft: segments", draft.segments.count, "seconds", draft.duration, "hasDraft", draft.hasDraft)
+                if environment["TT_DEBUG_ACTION"] == "draftsend", let joined = await draft.assemble() {
+                    print("TT_DEBUG joined:", joined.duration)
+                    store.send(take: joined.url, duration: joined.duration, transcript: [], voiceOnly: draft.isVoiceOnly, to: talk.id)
+                    draft.finishSent()
+                    print("TT_DEBUG sent, hasDraft", draft.hasDraft)
+                }
             case "newtalk":
                 showNewTalk = true
             default: break
@@ -192,7 +212,7 @@ struct RootView: View {
         }
         .onChange(of: router.openRecorderFor) { _, target in
             guard let target else { return }
-            recorderTarget = RecorderTarget(id: target)
+            draft.open(for: target)
             router.openRecorderFor = nil
         }
         .onChange(of: router.openTalkID) { _, id in
@@ -201,5 +221,80 @@ struct RootView: View {
             TalksNavigation.shared.open = id
             router.openTalkID = nil
         }
+    }
+}
+
+
+/// The paused draft, shown above the tab bar the way Music shows what is
+/// playing. On iOS 26.1 and later it is the system's own tab bar accessory;
+/// on 26.0, which lacks a way to hide that accessory, it floats in the same
+/// place.
+struct DraftAccessory: ViewModifier {
+    let draft: DraftRecorder
+
+    private var showing: Bool { draft.hasDraft && !draft.isPresented }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.1, *) {
+            content.tabViewBottomAccessory(isEnabled: showing) { DraftPill(draft: draft) }
+        } else {
+            content.overlay(alignment: .bottom) {
+                if showing {
+                    DraftPill(draft: draft)
+                        .padding(.vertical, 10)
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 92)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+        }
+    }
+}
+
+struct DraftPill: View {
+    let draft: DraftRecorder
+    @Environment(AppStore.self) private var store
+    @State private var confirmDiscard = false
+
+    private var who: String {
+        draft.talkID.flatMap { store.talk(id: $0)?.title } ?? "your talk"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(Palette.record)
+                .frame(width: 10, height: 10)
+                .phaseAnimator([1.0, 0.35]) { dot, opacity in dot.opacity(opacity) } animation: { _ in
+                    .easeInOut(duration: 0.9)
+                }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Draft to \(who)")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(timecode(draft.duration)) recorded. Tap to carry on.")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondaryText)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "record.circle")
+                .font(.title2)
+                .foregroundStyle(Palette.record)
+        }
+        .padding(.horizontal, 14)
+        .contentShape(.rect)
+        .onTapGesture { draft.resume() }
+        .contextMenu {
+            Button("Carry on recording", systemImage: "record.circle") { draft.resume() }
+            Button("Throw away draft", systemImage: "trash", role: .destructive) { confirmDiscard = true }
+        }
+        .confirmationDialog("Throw away this draft?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Throw away", role: .destructive) { draft.discard() }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Draft to \(who), \(timecode(draft.duration)) recorded")
+        .accessibilityHint("Opens the recorder to carry on")
+        .accessibilityAddTraits(.isButton)
     }
 }

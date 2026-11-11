@@ -77,8 +77,15 @@ final class CameraController: NSObject {
     private var startedAt: Date?
     private var finishContinuation: CheckedContinuation<Take?, Never>?
 
-    /// The two minute cap from the recorder HUD.
-    let maximumDuration: Double = 120
+    /// The cap for the segment being recorded. A draft has two minutes in
+    /// all, so this is whatever is left of that.
+    var maximumDuration: Double = 120
+    /// Where segments are written. A draft keeps them somewhere the system
+    /// will not clear, so it survives the app closing.
+    var outputDirectory = FileManager.default.temporaryDirectory
+    /// Called with every finished segment, including one that stopped itself
+    /// at the time limit.
+    var onTake: ((Take) -> Void)?
 
     // MARK: - Permission and setup
 
@@ -314,8 +321,8 @@ final class CameraController: NSObject {
 
     private func beginRecording() {
         guard authorization == .granted, !movieOutput.isRecording else { return }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("take-\(UUID().uuidString).mov")
+        let url = outputDirectory
+            .appendingPathComponent("segment-\(UUID().uuidString).mov")
         if let connection = movieOutput.connection(with: .video) {
             // Horizon level per the system, not a guess. This is what stops a
             // portrait take being written out as landscape.
@@ -403,6 +410,32 @@ final class CameraController: NSObject {
         try? FileManager.default.removeItem(at: take.url)
     }
 
+    /// The draft has taken ownership of the files; forget them here.
+    func clearTakes() { takes.removeAll() }
+
+    // MARK: - Apple's camera effects
+
+    /// The reactions this camera can draw into the video right now: hearts,
+    /// balloons, fireworks and the rest. Empty when the camera or the format
+    /// does not support them.
+    var availableReactions: [AVCaptureReactionType] {
+        guard let device = videoInput?.device, device.canPerformReactionEffects else { return [] }
+        let order: [AVCaptureReactionType] = [.heart, .thumbsUp, .thumbsDown, .balloons, .confetti, .fireworks, .rain, .lasers]
+        return order.filter { device.availableReactionTypes.contains($0) }
+    }
+
+    /// Plays a reaction on the live picture. It is recorded into the take.
+    func perform(_ reaction: AVCaptureReactionType) {
+        videoInput?.device.performEffect(for: reaction)
+    }
+
+    /// Opens the system's Video Effects panel: Portrait, Studio Light,
+    /// Center Stage, background replacement and reaction gestures, whichever
+    /// this camera supports. The user turns them on there.
+    func showVideoEffects() {
+        AVCaptureDevice.showSystemUserInterface(.videoEffects)
+    }
+
     func discardAll() {
         for take in takes { try? FileManager.default.removeItem(at: take.url) }
         takes.removeAll()
@@ -446,6 +479,7 @@ extension CameraController: AVCaptureFileOutputRecordingDelegate {
             }
             let take = Take(url: outputFileURL, duration: duration, voiceOnly: self.voiceOnly)
             self.takes.append(take)
+            self.onTake?(take)
             self.finishContinuation?.resume(returning: take)
             self.finishContinuation = nil
         }

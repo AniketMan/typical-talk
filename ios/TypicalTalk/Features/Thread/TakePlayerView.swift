@@ -16,6 +16,7 @@ struct TakePlayerView: View {
     /// anything sitting on top of the picture.
     @State private var tapFeedback: String?
     @State private var feedbackTask: Task<Void, Never>?
+    @State private var showFullScreen = false
 
     private var length: Double {
         player.duration > 0 ? player.duration : message.duration
@@ -40,6 +41,9 @@ struct TakePlayerView: View {
             store.saveProgress(player.currentTime, for: message.id, duration: length)
         }
         .onDisappear { feedbackTask?.cancel() }
+        .fullScreenCover(isPresented: $showFullScreen) {
+            FullScreenPlayer(player: player, title: message.author.name)
+        }
     }
 
     // MARK: - Video
@@ -120,6 +124,20 @@ struct TakePlayerView: View {
                     get: { Double(player.rate) },
                     set: { player.setRate(Float($0)) }
                 ))
+
+                Button {
+                    showFullScreen = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Palette.record)
+                        .frame(width: 38, height: 38)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .disabled(!player.hasMedia)
+                .accessibilityLabel("Full screen")
 
                 Button {
                     withAnimation(.snappy(duration: 0.28)) { showTranscript.toggle() }
@@ -250,5 +268,82 @@ struct WaveformPlaceholder: View {
                     .frame(width: 3, height: 14 + CGFloat((index * 37) % 52))
             }
         }
+    }
+}
+
+
+/// The same take, edge to edge. It shares the thread's player, so playback
+/// carries on exactly where it was when you go in and come out.
+struct FullScreenPlayer: View {
+    @Bindable var player: ThreadPlayer
+    let title: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var chromeVisible = true
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let avPlayer = player.player {
+                PlayerSurface(player: avPlayer)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+        }
+        .contentShape(.rect)
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.2)) { chromeVisible.toggle() }
+        }
+        .overlay(alignment: .top) {
+            if chromeVisible {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel("Exit full screen")
+                    Spacer()
+                    Text(title).font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Color.clear.frame(width: 44, height: 44)
+                }
+                .padding(.horizontal, 16)
+                .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if chromeVisible {
+                HStack(spacing: 12) {
+                    Button { player.togglePlay() } label: {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .frame(width: 48, height: 48)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+
+                    Text(timecode(player.currentTime)).font(.caption.monospacedDigit())
+                    Slider(
+                        value: Binding(
+                            get: { min(player.currentTime, max(player.duration, 0.01)) },
+                            set: { player.isScrubbing ? player.scrub(to: $0) : player.seek(to: $0) }
+                        ),
+                        in: 0...max(player.duration, 0.01),
+                        onEditingChanged: { editing in
+                            if editing { player.beginScrub() } else { player.endScrub() }
+                        }
+                    )
+                    Text(timecode(player.duration)).font(.caption.monospacedDigit())
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .transition(.opacity)
+            }
+        }
+        .statusBarHidden(!chromeVisible)
+        .persistentSystemOverlays(chromeVisible ? .automatic : .hidden)
     }
 }

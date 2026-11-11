@@ -116,6 +116,9 @@ export default {
       const leave = path.match(/^\/v1\/talks\/([\w-]+)\/membership$/);
       if (method === "DELETE" && leave) return leaveTalk(leave[1], env, user);
 
+      const takeOnly = path.match(/^\/v1\/takes\/([\w-]+)$/);
+      if (method === "DELETE" && takeOnly) return deleteTake(takeOnly[1], env, user);
+
       const takeBody = path.match(/^\/v1\/takes\/([\w-]+)\/file$/);
       if (method === "GET" && takeBody) return downloadTake(request, takeBody[1], env, user);
 
@@ -683,6 +686,7 @@ interface TakeRow {
   voice_only: number;
   sent_at: number;
   expired_at: number | null;
+  deleted_at: number | null;
 }
 
 /**
@@ -718,7 +722,7 @@ async function listTalks(url: URL, env: Env, user: User): Promise<Response> {
   // A take the reader has reported disappears for them straight away.
   const takeFilter = `
     t.talk_id = ?1 AND t.sent_at IS NOT NULL
-    AND (t.sent_at > ?2 OR t.expired_at > ?2
+    AND (t.sent_at > ?2 OR t.expired_at > ?2 OR t.deleted_at > ?2
          OR EXISTS (SELECT 1 FROM watches w WHERE w.take_id = t.id AND w.watched_at > ?2))
     AND t.id NOT IN (SELECT take_id FROM reports WHERE reporter_id = ?3 AND take_id IS NOT NULL)`;
 
@@ -730,7 +734,7 @@ async function listTalks(url: URL, env: Env, user: User): Promise<Response> {
        WHERE members.talk_id = ?`
     ).bind(talk.id),
     env.DB.prepare(
-      `SELECT t.id, t.author_id, t.duration, t.voice_only, t.sent_at, t.expired_at
+      `SELECT t.id, t.author_id, t.duration, t.voice_only, t.sent_at, t.expired_at, t.deleted_at
        FROM takes t WHERE ${takeFilter} ORDER BY t.sent_at DESC`
     ).bind(talk.id, since, user.id),
     env.DB.prepare(
@@ -770,6 +774,7 @@ async function listTalks(url: URL, env: Env, user: User): Promise<Response> {
           voiceOnly: take.voice_only === 1,
           sentAt: take.sent_at,
           expired: take.expired_at !== null,
+          deleted: take.deleted_at !== null,
           watchedBy: watchedBy.get(take.id) ?? [],
         })),
     });
@@ -896,13 +901,19 @@ async function downloadTake(
   if (!checked.value) return fail(404, "No such take.");
 
   const take = await env.DB.prepare(
-    "SELECT talk_id, author_id, storage_key, expired_at FROM takes WHERE id = ?"
+    "SELECT talk_id, author_id, storage_key, expired_at, deleted_at FROM takes WHERE id = ?"
   )
     .bind(checked.value)
-    .first<{ talk_id: string; author_id: string; storage_key: string; expired_at: number | null }>();
+    .first<{
+      talk_id: string;
+      author_id: string;
+      storage_key: string;
+      expired_at: number | null;
+      deleted_at: number | null;
+    }>();
   if (!take) return fail(404, "No such take.");
   if (!(await isMember(take.talk_id, user.id, env))) return fail(403, "Not your talk.");
-  if (take.expired_at) return fail(410, "That take is no longer stored.");
+  if (take.expired_at || take.deleted_at) return fail(410, "That take is no longer stored.");
   if (take.author_id !== user.id && (await blockedBetween(user.id, take.author_id, env))) {
     return fail(404, "No such take.");
   }
@@ -928,6 +939,25 @@ async function downloadTake(
   }
   headers["content-length"] = String(object.size);
   return new Response(object.body, { headers });
+}
+
+/**
+ * The author takes a take back. The file goes at once; the row stays as a
+ * marker so everyone else's phone removes its copy on the next sync.
+ */
+async function deleteTake(rawTake: string, env: Env, user: User): Promise<Response> {
+  const checked = checkID(rawTake);
+  if (!checked.value) return fail(404, "No such take.");
+  const take = await env.DB.prepare("SELECT author_id, storage_key, deleted_at FROM takes WHERE id = ?")
+    .bind(checked.value)
+    .first<{ author_id: string; storage_key: string; deleted_at: number | null }>();
+  if (!take) return fail(404, "No such take.");
+  if (take.author_id !== user.id) return fail(403, "Only the person who sent a take can delete it.");
+  if (take.deleted_at) return json({ ok: true });
+
+  await env.TAKES.delete(take.storage_key);
+  await env.DB.prepare("UPDATE takes SET deleted_at = ? WHERE id = ?").bind(now(), checked.value).run();
+  return json({ ok: true });
 }
 
 async function markWatched(rawTake: string, env: Env, user: User): Promise<Response> {

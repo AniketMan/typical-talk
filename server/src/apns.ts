@@ -39,7 +39,7 @@ async function badgeFor(env: Env, userID: string): Promise<number> {
   const row = await env.DB.prepare(
     `SELECT COUNT(*) AS unread FROM takes t
      JOIN members m ON m.talk_id = t.talk_id AND m.user_id = ?1
-     WHERE t.author_id != ?1 AND t.sent_at IS NOT NULL AND t.expired_at IS NULL
+     WHERE t.author_id != ?1 AND t.sent_at IS NOT NULL AND t.expired_at IS NULL AND t.deleted_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM watches w WHERE w.take_id = t.id AND w.user_id = ?1)
        AND t.author_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?1)`
   )

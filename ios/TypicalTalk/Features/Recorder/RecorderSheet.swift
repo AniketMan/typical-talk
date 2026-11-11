@@ -4,17 +4,21 @@ import SwiftUI
 /// The morphing recorder. One tap starts, one tap stops, the retake stack sits
 /// underneath, and sending is a separate deliberate action.
 struct RecorderSheet: View {
-    let destination: Talk.ID
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var camera = CameraController()
+    @State private var draft = DraftRecorder.shared
+    @State private var confirmDiscard = false
+    @State private var sendError: String?
+
+    private var camera: CameraController { draft.camera }
     @State private var showGuides = true
     @State private var handsFree = false
 
     @State private var isSending = false
     @State private var countdown: Int?
 
-    private var targetTalk: Talk? { store.talk(id: destination) }
+    private var targetTalk: Talk? { draft.talkID.flatMap { store.talk(id: $0) } }
+    private var hasFootage: Bool { !draft.segments.isEmpty || camera.isRecording }
 
     var body: some View {
         NavigationStack {
@@ -23,26 +27,40 @@ struct RecorderSheet: View {
                 VStack(spacing: 14) {
                     viewfinder
                     controlBar
-                    recordButton
+                    recordRow
 
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
             }
-            .navigationTitle("New take")
+            .navigationTitle(draft.segments.isEmpty ? "New take" : "Draft")
             .navigationSubtitle(targetTalk.map { "To \($0.title)" } ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close", systemImage: "xmark") {
-                        camera.discardAll()
-                        dismiss()
-                    }
+                    // Closing keeps what you recorded as a paused draft.
+                    // Throwing it away is the trash button, on purpose.
+                    Button("Close", systemImage: "xmark") { dismiss() }
                 }
             }
         }
         .task { await camera.prepare() }
-        .onDisappear { camera.stop() }
+        // However the recorder goes away, by the X or a swipe down, what was
+        // recorded is kept and waits above the tab bar.
+        .onDisappear { Task { await draft.recorderClosed() } }
+        .confirmationDialog("Throw away this draft?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Throw away", role: .destructive) {
+                draft.discard()
+                dismiss()
+            }
+        } message: {
+            Text("The \(timecode(draft.duration)) you recorded is deleted.")
+        }
+        .alert("Couldn't send", isPresented: Binding(get: { sendError != nil }, set: { if !$0 { sendError = nil } })) {
+            Button("OK") { sendError = nil }
+        } message: {
+            Text(sendError ?? "")
+        }
         .alert("Recording problem", isPresented: .constant(camera.failure != nil)) {
             Button("OK") { }
         } message: {
@@ -132,7 +150,7 @@ struct RecorderSheet: View {
                     Circle()
                         .fill(camera.isRecording ? Palette.record : .white.opacity(0.5))
                         .frame(width: 7, height: 7)
-                    Text("\(timecode(camera.elapsed)) / \(timecode(camera.maximumDuration))")
+                    Text("\(timecode(draft.duration + camera.elapsed)) / \(timecode(DraftRecorder.limit))")
                         .font(.caption2.monospacedDigit())
                 }
                 .padding(.horizontal, 10)
@@ -176,7 +194,9 @@ struct RecorderSheet: View {
                 toggle("Audio", "waveform", on: camera.voiceOnly) {
                     camera.voiceOnly.toggle()
                 }
-                .disabled(camera.cameraUnavailable)
+                // A take cannot switch between video and voice halfway.
+                .disabled(camera.cameraUnavailable || hasFootage)
+                effectsMenu
             }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
@@ -199,6 +219,84 @@ struct RecorderSheet: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityAddTraits(on ? [.isSelected] : [])
+    }
+
+    /// Apple's camera effects. Reactions are drawn into the video; the rest
+    /// (Portrait, Studio Light, Center Stage, backgrounds) are switched on in
+    /// the system's own Video Effects panel.
+    private var effectsMenu: some View {
+        Menu {
+            let reactions = camera.availableReactions
+            if !reactions.isEmpty {
+                Section("Reactions") {
+                    ForEach(reactions, id: \.rawValue) { reaction in
+                        Button(Self.name(of: reaction), systemImage: reaction.systemImageName) {
+                            camera.perform(reaction)
+                        }
+                    }
+                }
+            }
+            Button("Video Effects", systemImage: "camera.filters") { camera.showVideoEffects() }
+        } label: {
+            Image(systemName: "sparkles")
+                .font(.body)
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .disabled(camera.voiceOnly || camera.cameraUnavailable)
+        .accessibilityLabel("Effects")
+    }
+
+    private static func name(of reaction: AVCaptureReactionType) -> String {
+        switch reaction {
+        case .heart: "Heart"
+        case .thumbsUp: "Thumbs up"
+        case .thumbsDown: "Thumbs down"
+        case .balloons: "Balloons"
+        case .confetti: "Confetti"
+        case .fireworks: "Fireworks"
+        case .rain: "Rain"
+        case .lasers: "Lasers"
+        default: "Reaction"
+        }
+    }
+
+    /// Throw away on the left, record or pause in the middle, send on the
+    /// right. Send and throw away only appear once there is something.
+    private var recordRow: some View {
+        HStack {
+            Button {
+                confirmDiscard = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 52, height: 52)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .opacity(hasFootage && !camera.isRecording ? 1 : 0)
+            .disabled(!hasFootage || camera.isRecording || isSending)
+            .accessibilityLabel("Throw away draft")
+
+            Spacer()
+            recordButton
+            Spacer()
+
+            Button {
+                Task { await send() }
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(Palette.record, in: .circle)
+            }
+            .buttonStyle(.plain)
+            .opacity(hasFootage ? 1 : 0)
+            .disabled(!hasFootage || isSending)
+            .accessibilityLabel("Send")
+        }
+        .padding(.horizontal, 12)
     }
 
     /// The record button, with the camera switch beside it so both are under
@@ -239,14 +337,15 @@ struct RecorderSheet: View {
             .animation(.bouncy(duration: 0.3), value: camera.isRecording)
         }
         .buttonStyle(.plain)
-        .disabled(camera.authorization != .granted || countdown != nil || isSending)
-        .accessibilityLabel(camera.isRecording ? "Stop recording and send" : "Start recording")
+        .disabled(camera.authorization != .granted || countdown != nil || isSending || (!camera.isRecording && draft.remaining < 0.5))
+        .accessibilityLabel(camera.isRecording ? "Pause recording" : (draft.segments.isEmpty ? "Start recording" : "Resume recording"))
     }
 
+    /// One tap records, the next pauses. Pausing keeps everything so far;
+    /// recording again carries on from there.
     private func tapRecord() async {
         if camera.isRecording {
-            guard let take = await camera.finishAndWait() else { return }
-            await send(take)
+            await draft.pause()
             return
         }
         if handsFree {
@@ -256,26 +355,31 @@ struct RecorderSheet: View {
             }
             withAnimation(.snappy) { countdown = nil }
         }
-        camera.toggleRecording()
+        draft.startSegment()
     }
-
-    // MARK: - Takes
 
     // MARK: - Sending
 
-    private func send(_ take: CameraController.Take) async {
+    private func send() async {
+        guard let destination = draft.talkID else { return }
         isSending = true
         defer { isSending = false }
+        await draft.pause()
+        guard let joined = await draft.assemble() else {
+            sendError = "The recording could not be put together. Your draft is still here."
+            return
+        }
         // Transcribe before filing so the take is searchable the moment it
         // lands in the thread.
-        let transcript = await Transcriber.segments(for: take.url)
+        let transcript = await Transcriber.segments(for: joined.url)
         store.send(
-            take: take.url,
-            duration: take.duration,
+            take: joined.url,
+            duration: joined.duration,
             transcript: transcript,
-            voiceOnly: take.voiceOnly,
+            voiceOnly: draft.isVoiceOnly,
             to: destination
         )
+        draft.finishSent()
         dismiss()
     }
 }

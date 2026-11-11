@@ -61,7 +61,7 @@ struct TakeThumbnail: View {
                 Palette.canvas
             }
             if let resumeFraction {
-                ResumeRing(fraction: resumeFraction, size: size == .strip ? 30 : 22)
+                ResumeRing(fraction: resumeFraction, size: size == .strip ? 46 : 28)
             } else {
                 Image(systemName: message.isVoiceOnly ? "waveform" : "play.fill")
                     .font(size == .strip ? .footnote : .caption2)
@@ -130,14 +130,14 @@ struct ResumeRing: View {
     var body: some View {
         ZStack {
             Circle().fill(.black.opacity(0.45))
-            Circle().strokeBorder(.white.opacity(0.35), lineWidth: 2.5)
+            Circle().strokeBorder(.white.opacity(0.35), lineWidth: size * 0.1)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(Palette.record, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .stroke(Palette.record, style: StrokeStyle(lineWidth: size * 0.1, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .padding(1.25)
+                .padding(size * 0.05)
             Image(systemName: "play.fill")
-                .font(.system(size: size * 0.36))
+                .font(.system(size: size * 0.38))
                 .foregroundStyle(.white)
                 .offset(x: size * 0.02)
         }

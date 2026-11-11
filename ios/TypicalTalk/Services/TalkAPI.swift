@@ -51,6 +51,8 @@ enum TalkAPI {
         /// Milliseconds since 1970.
         let sentAt: Double
         let expired: Bool
+        /// Taken back by its author. Optional so an older server still decodes.
+        let deleted: Bool?
         let watchedBy: [String]
     }
 
@@ -248,6 +250,10 @@ enum TalkAPI {
         var components = URLComponents(url: base.appending(path: "/v1/talks"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "since", value: String(Int64(since)))]
         return try await send(url: components.url!, method: "GET", token: token)
+    }
+
+    static func deleteTake(_ takeID: String, token: String) async throws {
+        let _: Ack = try await send("/v1/takes/\(takeID.lowercased())", method: "DELETE", token: token)
     }
 
     static func markWatched(take takeID: String, token: String) async throws {

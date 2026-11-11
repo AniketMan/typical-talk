@@ -91,7 +91,7 @@ export async function expireOldTakes(env: Env, nowMs: number): Promise<number> {
   let expired = 0;
   for (let round = 0; round < 10; round++) {
     const batch = await env.DB.prepare(
-      "SELECT id, storage_key FROM takes WHERE sent_at < ? AND expired_at IS NULL LIMIT 200"
+      "SELECT id, storage_key FROM takes WHERE sent_at < ? AND expired_at IS NULL AND deleted_at IS NULL LIMIT 200"
     )
       .bind(cutoff)
       .all<{ id: string; storage_key: string }>();

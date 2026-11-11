@@ -13,13 +13,16 @@ struct ThreadView: View {
     @State private var showTranscript = false
     @State private var transcriptHeight: CGFloat = 120
     @State private var dragStartHeight: CGFloat?
-    @State private var showRecorder = false
     @State private var autoplayOnLoad = false
     @State private var showReport = false
     @State private var showBlock = false
     @State private var showLeave = false
     @State private var showAddPeople = false
     @State private var actionError: String?
+    /// The take a long-press menu acted on, when it is not the one playing.
+    @State private var menuTarget: Message?
+    @State private var pendingTakeDelete: Message?
+    @State private var toast: String?
     @Environment(\.dismiss) private var dismiss
     @Namespace private var replyMorph
 
@@ -33,6 +36,22 @@ struct ThreadView: View {
     }
 
     var body: some View {
+        withDialogs(screen)
+        .task { showTranscript = store.alwaysShowCaptions }
+        .onAppear { ThreadContext.shared.openTalk = talkID }
+        // The tab bar's circle becomes Reply while this thread is open.
+        .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
+        .task(id: talkID, priority: .utility) { await store.ensureTranscripts(in: talkID) }
+        .onChange(of: player.isPlaying) { _, playing in ThreadContext.shared.isPlaying = playing }
+        .onDisappear {
+            saveProgress()
+            player.teardown()
+            ThreadContext.shared.isPlaying = false
+            if ThreadContext.shared.openTalk == talkID { ThreadContext.shared.openTalk = nil }
+        }
+    }
+
+    private var screen: some View {
         Group {
             if let talk, let current {
                 VStack(spacing: 0) {
@@ -74,6 +93,12 @@ struct ThreadView: View {
         .navigationSubtitle(current.map { "\($0.author.name), \(relativeLabel($0.sentAt))" } ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { threadMenu }
+    }
+
+    /// Confirmations, alerts and sheets, kept apart from the screen so the
+    /// compiler can type-check each half.
+    private func withDialogs(_ content: some View) -> some View {
+        content
         .confirmationDialog("Report this take", isPresented: $showReport, titleVisibility: .visible) {
             ForEach(TalkAPI.ReportReason.allCases) { reason in
                 Button(reason.label) { report(reason) }
@@ -107,25 +132,35 @@ struct ThreadView: View {
         } message: {
             Text(actionError ?? "")
         }
+        .confirmationDialog(
+            pendingTakeDelete?.author.isYou == true ? "Delete this take for everyone?" : "Remove this take from your phone?",
+            isPresented: Binding(get: { pendingTakeDelete != nil }, set: { if !$0 { pendingTakeDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingTakeDelete
+        ) { message in
+            Button(message.author.isYou ? "Delete for everyone" : "Remove", role: .destructive) {
+                deleteTake(message)
+            }
+        } message: { message in
+            Text(message.author.isYou
+                 ? "It disappears from everyone's phone in this talk."
+                 : "Only from this phone. \(message.author.name) and anyone else in the talk still have it.")
+        }
+        .overlay(alignment: .top) {
+            if let toast {
+                Label(toast, systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .sheet(isPresented: $showAddPeople) {
             AddPeopleView(talkID: talkID)
                 .presentationDetents([.medium, .large])
                 .presentationBackground(Palette.canvas)
-        }
-        .fullScreenCover(isPresented: $showRecorder) {
-            RecorderSheet(destination: talkID)
-        }
-        .task { showTranscript = store.alwaysShowCaptions }
-        .onAppear { ThreadContext.shared.openTalk = talkID }
-        // The tab bar's circle becomes Reply while this thread is open.
-        .onChange(of: ThreadContext.shared.replyRequests) { _, _ in beginReply() }
-        .task(id: talkID, priority: .utility) { await store.ensureTranscripts(in: talkID) }
-        .onChange(of: player.isPlaying) { _, playing in ThreadContext.shared.isPlaying = playing }
-        .onDisappear {
-            saveProgress()
-            player.teardown()
-            ThreadContext.shared.isPlaying = false
-            if ThreadContext.shared.openTalk == talkID { ThreadContext.shared.openTalk = nil }
         }
     }
 
@@ -138,8 +173,14 @@ struct ThreadView: View {
                 if let talk, talk.isGroup {
                     Button("Add people", systemImage: "person.badge.plus") { showAddPeople = true }
                 }
+                if let current, current.fileName != nil {
+                    Button("Save to Photos", systemImage: "square.and.arrow.down") { save(current) }
+                }
                 if let current, !current.author.isYou {
-                    Button("Report this take", systemImage: "flag") { showReport = true }
+                    Button("Report this take", systemImage: "flag") {
+                        menuTarget = nil
+                        showReport = true
+                    }
                     Button("Block \(current.author.name)", systemImage: "hand.raised", role: .destructive) {
                         showBlock = true
                     }
@@ -156,10 +197,11 @@ struct ThreadView: View {
     }
 
     private func report(_ reason: TalkAPI.ReportReason) {
-        guard let current else { return }
-        player.teardown()
+        guard let target = menuTarget ?? current else { return }
+        menuTarget = nil
+        if target.id == current?.id { player.teardown() }
         Task {
-            if let problem = await store.report(current, in: talkID, reason: reason, details: nil) {
+            if let problem = await store.report(target, in: talkID, reason: reason, details: nil) {
                 actionError = problem
             }
         }
@@ -188,13 +230,66 @@ struct ThreadView: View {
         }
     }
 
+    /// The long-press menu on one take in the strip.
+    @ViewBuilder
+    private func takeMenu(_ message: Message) -> some View {
+        if message.fileName != nil {
+            Button("Save to Photos", systemImage: "square.and.arrow.down") { save(message) }
+        }
+        if message.author.isYou {
+            Button("Delete for everyone", systemImage: "trash", role: .destructive) {
+                pendingTakeDelete = message
+            }
+        } else {
+            Button("Report", systemImage: "flag") {
+                menuTarget = message
+                showReport = true
+            }
+            Button("Remove from this phone", systemImage: "trash", role: .destructive) {
+                pendingTakeDelete = message
+            }
+        }
+    }
+
+    private func save(_ message: Message) {
+        guard let url = message.localVideoURL else { return }
+        Task {
+            if let problem = await PhotoSaver.save(url) {
+                actionError = problem
+            } else {
+                showToast("Saved to Photos")
+            }
+        }
+    }
+
+    private func deleteTake(_ message: Message) {
+        if message.id == current?.id { saveProgress() }
+        Task {
+            if message.author.isYou {
+                if let problem = await store.deleteTake(message, in: talkID) { actionError = problem; return }
+            } else {
+                store.hideTake(message, in: talkID)
+            }
+            if selected == message.id { selected = nil }
+            showToast(message.author.isYou ? "Take deleted" : "Removed from this phone")
+        }
+    }
+
+    private func showToast(_ text: String) {
+        withAnimation(.snappy) { toast = text }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation(.easeOut) { if toast == text { toast = nil } }
+        }
+    }
+
     // MARK: - Switching takes
 
     /// Pauses, saves your place, and opens the recorder.
     private func beginReply() {
         saveProgress()
         if player.isPlaying { player.togglePlay() }
-        showRecorder = true
+        DraftRecorder.shared.open(for: talkID)
     }
 
     /// Stores where the current take got to, before the player is reused.
@@ -290,6 +385,8 @@ struct ThreadView: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        // Press and hold for what you can do with this one take.
+                        .contextMenu { takeMenu(message) }
                         .id(message.id)
                     }
                 }
